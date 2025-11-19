@@ -1,14 +1,19 @@
+# Questions for client:
+# 1. How to define an incomplete product? Do we have another column saying the status of the product? Or the client has to add "-" in the empty cells?
+
+
+import string
 import faicons as fa
 import plotly.express as px
+import requests
+import re
 
 # Load data and compute static values
-from shared import app_dir, tips, food_products
+from shared import app_dir
 from shinywidgets import output_widget, render_plotly
 
 from shiny import App, reactive, render, ui
-
-bill_rng = (min(tips.total_bill), max(tips.total_bill))
-
+import pandas as pd
 
 ICONS = {
     "user": fa.icon_svg("user", "regular"),
@@ -20,114 +25,22 @@ ICONS = {
 # Add page title and sidebar
 app_ui = ui.page_sidebar(
     ui.sidebar(
-        ui.input_slider(
-            "total_bill",
-            "Bill amount",
-            min=bill_rng[0],
-            max=bill_rng[1],
-            value=bill_rng,
-            pre="$",
-        ),
-        ui.input_checkbox_group(
-            "time",
-            "Food service",
-            ["Lunch", "Dinner"],
-            selected=["Lunch", "Dinner"],
-            inline=True,
-        ),
-        ui.input_action_button("reset", "Reset filter"),
-        open="desktop",
-    ),
-    # ui.layout_columns(
-    #     ui.value_box(
-    #         "Total tippers", ui.output_ui("total_tippers"), showcase=ICONS["user"]
-    #     ),
-    #     ui.value_box(
-    #         "Average tip", ui.output_ui("average_tip"), showcase=ICONS["wallet"]
-    #     ),
-    #     ui.value_box(
-    #         "Average bill",
-    #         ui.output_ui("average_bill"),
-    #         showcase=ICONS["currency-dollar"],
-    #     ),
-    #     fill=False,
-    # ),
-    ui.layout_columns(
-        ui.value_box(
-            "Total products", ui.output_ui("total_food_products"), showcase=ICONS["user"]
-        ),
-        ui.value_box(
-            "Total merged products", ui.output_ui("total_merged_food_products"), showcase=ICONS["user"]
-        ),
-        ui.value_box(
-            "Average energy", ui.output_ui("average_energy"), showcase=ICONS["user"]
-        ),
-        fill=False,
+        ui.output_ui("login_card"),
+        ui.output_ui("modify_product_card")
     ),
     ui.layout_columns(
         ui.card(
             ui.card_header("Incomplete products"),
-            ui.output_data_frame("products_with_missing_data_table"),
-            full_screen=True
-        ),
-        ui.card(
-            ui.card_header("Choose the product and update the information"),
             ui.tags.div(
-                ui.tags.button(
-                    "Show HEy",
-                    type="button",
-                    onclick="document.getElementById('hey-output').innerText = 'HEy';",
-                    class_="btn btn-primary",
+                ui.tags.div(
+                    ui.output_data_frame("products_with_missing_data_table"),
+                    style = "width: 100%"
                 ),
-                ui.tags.div(id="hey-output", style="marginTop: '.5rem'; fontWeight: '600'"),
+                style = "display: flex; flex-direction: row; align-items: top; gap: 1rem"
             ),
-            full_screen=True,
+            full_screen=True
         )
     ),
-    # ui.layout_columns(
-    #     ui.card(
-    #         ui.card_header("Tips data"), ui.output_data_frame("table"), full_screen=True
-    #     ),
-    #     ui.card(
-    #         ui.card_header(
-    #             "Total bill vs tip",
-    #             ui.popover(
-    #                 ICONS["ellipsis"],
-    #                 ui.input_radio_buttons(
-    #                     "scatter_color",
-    #                     None,
-    #                     ["none", "sex", "smoker", "day", "time"],
-    #                     inline=True,
-    #                 ),
-    #                 title="Add a color variable",
-    #                 placement="top",
-    #             ),
-    #             class_="d-flex justify-content-between align-items-center",
-    #         ),
-    #         output_widget("scatterplot"),
-    #         full_screen=True,
-    #     ),
-    #     ui.card(
-    #         ui.card_header(
-    #             "Tip percentages",
-    #             ui.popover(
-    #                 ICONS["ellipsis"],
-    #                 ui.input_radio_buttons(
-    #                     "tip_perc_y",
-    #                     "Split by:",
-    #                     ["sex", "smoker", "day", "time"],
-    #                     selected="day",
-    #                     inline=True,
-    #                 ),
-    #                 title="Add a color variable",
-    #             ),
-    #             class_="d-flex justify-content-between align-items-center",
-    #         ),
-    #         output_widget("tip_perc"),
-    #         full_screen=True,
-    #     ),
-    #     col_widths=[6, 6, 12],
-    # ),
     ui.include_css(app_dir / "styles.css"),
     title="Food products",
     fillable=True,
@@ -135,102 +48,188 @@ app_ui = ui.page_sidebar(
 
 
 def server(input, output, session):
-    @render.ui
-    def total_food_products():
-        return food_products.shape[0]
     
-    @render.ui
-    def total_merged_food_products():
-        return food_products[food_products['merged_to'].notna()].shape[0]
+    # --------------------------------- #
+    # Reactive Values                   #
+    # --------------------------------- #
+    login_ok = reactive.Value(False)
+    reactive_user_name = reactive.Value("")
+    reactive_password = reactive.Value("")
+    product_to_modify = reactive.Value(pd.DataFrame())
     
-    @render.ui
-    def average_energy():
-        # compute average energy, treating missing values as 0.0
-        val = food_products['energy'].fillna(0.0).mean()
-        return f"{val:.2f}"
-    
+    # --------------------------------- #
+    # LOG IN                            #
+    # --------------------------------- #
     @reactive.calc
-    def tips_data():
-        bill = input.total_bill()
-        idx1 = tips.total_bill.between(bill[0], bill[1])
-        idx2 = tips.time.isin(input.time())
-        return tips[idx1 & idx2]
-
+    def is_admin():
+        return login_ok()
+    
     @render.ui
-    def total_tippers():
-        return tips_data().shape[0]
+    def login_card():
+        if is_admin() == False:
+            return ui.card(
+                ui.card_header("Admin Login"),
+                ui.input_text("email", "Email", placeholder="admin"),
+                ui.input_password("password", "Password", placeholder="admin"),
+                ui.input_action_button("login", "Login"),
+                style = "display: flex; flex-direction: column; align-items: center"
+            )
+        else:
+            return ui.card(
+                ui.tags.div(
+                    ui.tags.p(f"Hello {reactive_user_name.get()}!")
+                )
+            )
 
-    @render.ui
-    def average_tip():
-        d = tips_data()
-        if d.shape[0] > 0:
-            perc = d.tip / d.total_bill
-            return f"{perc.mean():.1%}"
-
-    @render.ui
-    def average_bill():
-        d = tips_data()
-        if d.shape[0] > 0:
-            bill = d.total_bill.mean()
-            return f"${bill:.2f}"
-
-    @render.data_frame
-    def products_with_missing_data_table():
-        NUTRITION_VALUES_COLUMNS = [
-            'energy', 'protein', 'fat', 'saturated_fatty_acid','carbohydrates',
-            'sugar', 'starch', 'dietary_fiber', 'salt', 'sodium', 'k', 'ca',
-            'p', 'fe', 'polyols', 'remarks_carbohydrates', 'categories'
-        ]
+    # Validate credentials only when the Login button is clicked
+    @reactive.effect
+    @reactive.event(input.login)
+    def _on_login():
+        email = input.email()
+        password = input.password()
+        reactive_user_name.set(email)
+        reactive_password.set(password)
+        login_ok.set(reactive_user_name.get() == "admin" and reactive_password.get() == "admin")
+    
+    def get_all_products():
+        API_URL = "http://127.0.0.1:5000/products"
         
-        incomplete_products = food_products[food_products[NUTRITION_VALUES_COLUMNS].isnull().any(axis=1)]
+        try:
+            products = requests.get(API_URL)
+            return products.json()
+        except Exception as e:
+            return {"error": str(e)}
         
-        incomplete_products_brief_columns = incomplete_products[['id', 'name', 'active', 'brands', 'categories', 'barcode']]
+    def get_product_info(product_id):
+        API_URL = "http://127.0.0.1:5000/products/" + str(product_id)
+        
+        try:
+            product = requests.get(API_URL)
+            return product.json()
+        except Exception as e:
+            return {"error": str(e)}
 
-        return render.DataGrid(incomplete_products_brief_columns)
-
-    @render_plotly
-    def scatterplot():
-        color = input.scatter_color()
-        return px.scatter(
-            tips_data(),
-            x="total_bill",
-            y="tip",
-            color=None if color == "none" else color,
-            trendline="lowess",
-        )
-
-    @render_plotly
-    def tip_perc():
-        from ridgeplot import ridgeplot
-
-        dat = tips_data()
-        dat["percent"] = dat.tip / dat.total_bill
-        yvar = input.tip_perc_y()
-        uvals = dat[yvar].unique()
-
-        samples = [[dat.percent[dat[yvar] == val]] for val in uvals]
-
-        plt = ridgeplot(
-            samples=samples,
-            labels=uvals,
-            bandwidth=0.01,
-            colorscale="viridis",
-            colormode="row-index",
-        )
-
-        plt.update_layout(
-            legend=dict(
-                orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5
+    @render.ui
+    def modify_product_card():
+        if is_admin():
+            return ui.card(
+                ui.card_header("Modify product"),
+                ui.input_action_button("modify_product", "Get product info")
+            )
+        
+    @reactive.effect
+    @reactive.event(input.modify_product)
+    def _on_modify_product():
+        ui.modal_show(
+            ui.modal(
+                ui.tags.p("Type in the product id that you want to modify information "),
+                ui.input_numeric("product_id", "Product ID", value=0, min=0),
+                ui.input_action_button("get_product_info", "Get product info"),
+                # ui.input_action_button("save_product", "Save changes"),
+                style = "display: flex; flex-direction: column; align-items: left; gap: 1rem"
             )
         )
+        
+    @reactive.effect
+    @reactive.event(input.get_product_info)
+    def _on_get_product_info():
+        product_id = input.product_id()
+        response_product = get_product_info(product_id)
+        # Normalize dict (single product) or list of dicts into a DataFrame
+        df = pd.json_normalize(response_product)
+        product_to_modify.set(df)
+        # After loading, show modal with edit form
+        ui.modal_show(
+            ui.modal(
+                ui.tags.h4(f"Edit Product ID {product_id}"),
+                ui.output_ui("product_edit_form"),
+                ui.input_action_button("save_product", "Save changes"),
+                easy_close=True,
+                footer=ui.tags.small("Close by clicking outside or Save"),
+                size="l"
+            )
+        )
+        
+    def _sanitize_id(name: str) -> str:
+        # Keep alphanumerics and underscore; replace others with underscore
+        return re.sub(r"[^0-9A-Za-z_]+", "_", name)
 
-        return plt
+    @render.ui
+    def product_edit_form():
+        df = product_to_modify.get()
+        if df is None or df.empty:
+            return ui.tags.div("No product loaded.", style="color:#666;")
+
+        # Use the first row as the current product
+        row = df.iloc[0]
+
+        rows = []
+        for col in df.columns:
+            input_id = f"edit_{_sanitize_id(col)}"
+            val = row[col]
+            # Render as text input for simplicity and robustness
+            # Convert NaN/None to empty string for display
+            display_val = "" if pd.isna(val) else str(val)
+            # Vertical (label above input)
+            rows.append(
+                ui.tags.div(
+                    ui.tags.label(col, **{"for": input_id}, style="font-weight:600; margin-bottom:.25rem;"),
+                    ui.input_text(input_id, None, value=display_val),
+                    style="display:flex; flex-direction:column; width:100%; max-width:320px;"
+                )
+            )
+
+        return ui.tags.div(
+            *rows,
+            style="display:flex; flex-wrap:wrap; gap:1rem; align-items:flex-start;"
+        )
 
     @reactive.effect
-    @reactive.event(input.reset)
-    def _():
-        ui.update_slider("total_bill", value=bill_rng)
-        ui.update_checkbox_group("time", selected=["Lunch", "Dinner"])
+    @reactive.event(input.save_product)
+    def _on_save_product():
+        df = product_to_modify.get()
+        if df is None or df.empty:
+            return
+        cols = list(df.columns)
+        new_vals = {}
+        for col in cols:
+            input_id = f"edit_{_sanitize_id(col)}"
+            try:
+                val = input[input_id]()  # type: ignore[index]
+            except Exception:
+                val = None
+            new_vals[col] = val
+        updated = pd.DataFrame([new_vals])
+        product_to_modify.set(updated)
+        # Optionally close modal after save
+        ui.modal_remove()
+    
+    @render.data_frame
+    def products_with_missing_data_table():
+        if is_admin():
+            res = get_all_products()
+            df = pd.json_normalize(res)
+            columns_to_show = ['id', 'name', 'active', 'energy', 'protein', 'categories']
 
+            return df[columns_to_show]
+        
+    @render.data_frame
+    def render_product_to_modify():
+        # Access the underlying DataFrame via .get() so Shiny tracks dependency
+        df = product_to_modify.get()
+        cols_to_show = ['id','name', 'barcode']
+        
+        if df is None or df.empty:
+            # Provide an empty structure so UI renders headers consistently
+            return pd.DataFrame(columns=cols_to_show)
+        
+        return df[cols_to_show]
+    
+    @render.text
+    def greeting_admin():
+        if is_admin():
+            return "Hello admin!"
+        else:
+            return "You need to log in first!"
 
 app = App(app_ui, server)
