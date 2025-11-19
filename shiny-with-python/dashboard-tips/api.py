@@ -7,9 +7,10 @@ from psycopg2 import connect
 import psycopg2
 import json
 
-# 1. Create Flask app
+# Create Flask app
 app = Flask(__name__)
 
+# Connection to database
 def connect_to_database():
     try:
         conn = psycopg2.connect(database = "food", 
@@ -22,12 +23,12 @@ def connect_to_database():
     except:
         print("❌Connection failed")
 
-# 3. Define a predict endpoint
+# Get all products
 @app.route("/products", methods=["GET"])
-def get_10_products():
+def get_50_products():
     conn = connect_to_database()
     cur = conn.cursor()
-    cur.execute('SELECT * FROM product LIMIT 10;')
+    cur.execute('SELECT * FROM product;')
     rows = cur.fetchall()
     conn.commit()
     conn.close()
@@ -40,7 +41,7 @@ def get_10_products():
     return jsonify(results)
 
 @app.route("/products/<int:product_id>", methods=["GET"])
-def get_product(product_id):
+def get_product_by_id(product_id):
     conn = connect_to_database()
     cur = conn.cursor()
     cur.execute('SELECT * FROM product WHERE id = %s;', (product_id,))
@@ -56,6 +57,28 @@ def get_product(product_id):
     cur.close()
     
     return jsonify(result)
+
+# Get all incompleted products
+@app.route("/products/incompleted", methods=["GET"])
+def get_all_incompleted_products():
+    conn = connect_to_database()
+    cur = conn.cursor()
+    # Use a simple SELECT and filter incomplete rows (rows with any NULL) in Python
+    cur.execute('SELECT * FROM product WHERE active = 0;')
+    rows = cur.fetchall()
+
+    # map rows to list[dict] using column names so jsonify can serialize it
+    columns = [desc[0] for desc in cur.description]
+    results = [dict(zip(columns, row)) for row in rows]
+
+    # filter for incomplete products (any field is None)
+    incompleted = [r for r in results if any(v is None for v in r.values())]
+
+    cur.close()
+    conn.commit()
+    conn.close()
+    
+    return jsonify(incompleted)
 
 if __name__ == "__main__":
     app.run(debug=True)
