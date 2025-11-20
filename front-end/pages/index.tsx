@@ -25,7 +25,6 @@ const Home: React.FC = () => {
         }
     };
 
-
     return (
         <div>
             <FirstTenProducts firstTenProducts={products} />

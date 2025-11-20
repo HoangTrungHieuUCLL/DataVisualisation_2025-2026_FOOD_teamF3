@@ -1,0 +1,20 @@
+:root {
+  --bslib-sidebar-main-bg: #f8f8f8;
+}
+
+.popover {
+  --bs-popover-header-bg: #222;
+  --bs-popover-header-color: #fff;
+}
+
+.popover .btn-close {
+  filter: var(--bs-btn-close-white-filter);
+}
+
+.incompleted_table_rows:hover td {
+  background-color: #f5f7ff;
+}
+
+.incompleted_table_rows:hover {
+  outline: 2px solid #d0d7de;
+}

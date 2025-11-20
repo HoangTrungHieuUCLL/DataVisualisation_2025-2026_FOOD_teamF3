@@ -38,3 +38,7 @@ then
 ```Bash
 npm start
 ```
+
+## Questions for the clients
+1. When it comes to products with incomplete information, are we talking about incomplete nutrition values (such as `energy`. `protein`, `ca`, ...)? Or does it extend to columns such as `barcode`, `name`, etc... as well?
+2. Is it possible to add more columns to the database?
