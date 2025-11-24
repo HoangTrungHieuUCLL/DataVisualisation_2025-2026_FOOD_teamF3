@@ -24,12 +24,16 @@ ICONS = {
 app_ui = ui.page_sidebar(
     ui.sidebar(
         ui.output_ui("login_card"),
-        # ui.output_ui("modify_product_card")
+        ui.output_ui("dynamic_control_center")
     ),
     ui.layout_columns(
         ui.navset_tab(
-            ui.nav_panel("Incomplete products", ui.output_ui("all_products_listing")),
-            ui.nav_panel("Alike products")
+            ui.nav_panel("Incomplete products", 
+                         ui.output_text("incomplete_products_instruction"),
+                         ui.output_ui("incomplete_products_listing")),
+            ui.nav_panel("Alike products"),
+            id="main_tabs",
+            selected="Incomplete products"
         )
     ),
     ui.include_css(app_dir / "styles.css"),
@@ -46,7 +50,9 @@ def server(input, output, session):
     login_ok = reactive.Value(False)
     reactive_user_name = reactive.Value("")
     reactive_password = reactive.Value("")
+    incomplete_products = reactive.Value(pd.DataFrame())
     product_to_modify = reactive.Value(pd.DataFrame())
+    current_tab = reactive.Value("Incomplete products")
     
     # --------------------------------- #
     # LOG IN                            #
@@ -55,24 +61,29 @@ def server(input, output, session):
     def is_admin():
         return login_ok()
     
+    # Track selected tab and update current_tab reactive value
+    @reactive.effect
+    def _track_current_tab():
+        tab = input.main_tabs()
+        if tab:
+            current_tab.set(tab)
+    
     @render.ui
     def login_card():
         if is_admin() == False:
-            return ui.card(
-                ui.card_header("Admin Login"),
+            return ui.tags.div(
+                ui.tags.h4("Admin Login"),
                 ui.input_text("username", "Username"),
                 ui.input_password("password", "Password"),
                 ui.input_action_button("login", "Login"),
-                style = "display: flex; flex-direction: column; align-items: center"
+                class_="panel-box"
             )
         else:
-            return ui.card(
-                ui.tags.div(
-                    ui.tags.p(f"Hello {reactive_user_name.get()}!"),
+            return ui.tags.div(
+                    ui.tags.h4(f"Hello {reactive_user_name.get()}!"),
                     ui.input_action_button("logout", "Logout"),
-                    style = "display: flex; flex-direction: column; align-items: left"
+                    class_="panel-box"
                 )
-            )
 
     # Login
     @reactive.effect
@@ -100,26 +111,145 @@ def server(input, output, session):
         reactive_user_name.set("")
         reactive_password.set("")
         login_ok.set(False)
-
-    # INCOMPLETE TAB #
+        
+    # Filtering
     @render.ui
-    def all_products_listing():
+    def dynamic_control_center():
         if not is_admin():
             return ui.tags.div()
         
-        # Get 50 products (just to test it out)
-        products = get_incompleted_products()
+        if current_tab.get() == "Incomplete products":
+            # Get products to determine dynamic max for slider
+            products = get_incompleted_products()
+            if isinstance(products, dict) and "error" in products:
+                return ui.tags.div(
+                    ui.tags.p("Incomplete products"),
+                    ui.tags.p(f"Error loading products: {products['error']}", class_="panel-box")
+                )
+                
+            df_tmp = pd.json_normalize(products)
+            incomplete_products.set(df_tmp)
+            total = len(df_tmp.index)
+            if total == 0:
+                slider = ui.tags.p("No incomplete products available.")
+                sort_controls = ui.tags.div()
+                search_by_keywords = ui.tags.div()
+            else:
+                # Control number of producs to show
+                default_val = 10 if total >= 10 else total
+                slider = ui.input_slider(
+                    "incomplete_limit",
+                    "Number of products",
+                    min=1,
+                    max=total,
+                    value=default_val,
+                    step=1
+                )
+                
+                # Column choices and placeholder
+                col_choices = list(df_tmp.columns)
+                # Sorting controls with inactive default '-'
+                sort_controls = ui.tags.div(
+                    ui.input_select(
+                        "sort_column",
+                        "Sort column",
+                        choices=["-"] + col_choices,
+                        selected="-"
+                    ),
+                    ui.input_select(
+                        "sort_direction",
+                        "Sort order",
+                        choices=["-", "ASC", "DESC"],
+                        selected="-"
+                    ),
+                    ui.input_action_button("reset_sort", "Reset", style="width:100%"),
+                    style="display:flex; flex-direction:column; gap:1rem;"
+                )
+
+                # Search by keywords (independent of sort) with column placeholder
+                search_by_keywords = ui.tags.div(
+                    ui.input_select(
+                        "search_in_column",
+                        "Search in column",
+                        choices=["-"] + col_choices,
+                        selected="-"
+                    ),
+                    ui.input_text('keywords','Keywords'),
+                    ui.input_action_button('reset_search_by_keywords', 'Reset', style="width:100%")
+                )
+            return ui.tags.div(
+                ui.tags.hr(),
+                ui.tags.div(
+                    slider,
+                    class_="panel-box"
+                ),
+                ui.tags.div(
+                    sort_controls,
+                    class_="panel-box"
+                ),
+                ui.tags.div(
+                    search_by_keywords,
+                    class_="panel-box"
+                ),
+                ui.tags.div(
+                    ui.input_action_button('reset_all', 'Reset all', class_="reset_all_button"),
+                    class_="panel-box"
+                ),
+                style="display:flex; flex-direction:column; gap: 1rem;"
+            )
+        else:
+            return ui.tags.div(
+                "Alike products",
+                class_="panel-box"
+                )
+
+    # INCOMPLETE TAB #
+    @render.text
+    def incomplete_products_instruction():
+        if not is_admin():
+            return ""
+        return "Click on the product to check and modify its information."
+    
+    @render.ui
+    def incomplete_products_listing():
+        if not is_admin():
+            return ui.tags.div()
         
-        if isinstance(products, dict) and "error" in products:
-            return ui.tags.div(f"Error loading products: {products['error']}", style="color:#b00;")
-        
-        df = pd.json_normalize(products)
+        df = incomplete_products.get()
         
         if df.empty:
             return ui.tags.div("No products found.")
+
+        # Apply limit from slider (default 10 if slider not yet mounted)
+        limit = 10
+        try:
+            limit = input.incomplete_limit()
+        except Exception:
+            pass
+        df = df.head(limit)
+        
+        # Apply search if active (before sorting/limit for efficiency)
+        try:
+            search_by_keyword_col = input.search_in_column()
+            keywords = input.keywords()
+            if search_by_keyword_col in df.columns and search_by_keyword_col != "-" and keywords:
+                df = df[df[search_by_keyword_col].astype(str).str.contains(keywords, case=False, na=False)]
+        except Exception:
+            pass
+
+        # Apply sorting if active
+        try:
+            sort_col = input.sort_column()
+            sort_dir = input.sort_direction()
+            if sort_col in df.columns and sort_col != "-" and sort_dir in ["ASC", "DESC"]:
+                df = df.sort_values(by=sort_col, ascending=(sort_dir == "ASC"))
+        except Exception:
+            pass
         
         # Decide columns to show
-        base_cols = [c for c in ["id","name","active","categories"] if c in df.columns]
+        base_cols = [c for c in ['id', 'name', 'name_search', 'energy', 'protein', 'fat',
+       'saturated_fatty_acid', 'carbohydrates', 'unit', 'synonyms', 'brands', 'brands_search', 'bron', 'categories',
+       'barcode', 'updated'] if c in df.columns]
         header = ui.tags.tr(
             *[ui.tags.th(col, style="padding:.25rem .5rem; text-align:left; border:1px solid #ddd;") for col in base_cols]
             # ui.tags.th("Actions", style="padding:.25rem .5rem; text-align:left; border: 1px solid #ddd;")
@@ -147,6 +277,28 @@ def server(input, output, session):
             table,
             style="margin-top:1rem; margin-bottom:1rem"
         )
+        
+    @reactive.effect
+    @reactive.event(input.reset_search_by_keywords)
+    def _on_reset_search_by_keywords():
+        # Clear the keywords text input
+        session.send_input_message("search_in_column", {"value": "-"})
+        session.send_input_message("keywords", {"value": ""})
+
+    @reactive.effect
+    @reactive.event(input.reset_sort)
+    def _on_reset_sort():
+        # Reset sorting selects to inactive '-'
+        session.send_input_message("sort_column", {"value": "-"})
+        session.send_input_message("sort_direction", {"value": "-"})
+        
+    @reactive.effect
+    @reactive.event(input.reset_all)
+    def _on_reset_all():
+        session.send_input_message("search_in_column", {"value": "-"})
+        session.send_input_message("keywords", {"value": ""})
+        session.send_input_message("sort_column", {"value": "-"})
+        session.send_input_message("sort_direction", {"value": "-"})
         
     def _sanitize_id(name: str) -> str:
         # Keep alphanumerics and underscore; replace others with underscore
