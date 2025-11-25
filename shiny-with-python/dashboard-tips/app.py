@@ -3,7 +3,7 @@ import faicons as fa
 import plotly.express as px
 import requests
 import re
-from services import get_incompleted_products, get_product_info, get_all_products
+from services import get_incompleted_products, get_product_info, get_all_products, get_alike_products
 
 
 # Load data and compute static values
@@ -54,6 +54,7 @@ def server(input, output, session):
     incomplete_products = reactive.Value(pd.DataFrame())
     product_to_modify = reactive.Value(pd.DataFrame())
     current_tab = reactive.Value("Incomplete products")
+    show_product_info = reactive.Value(False)
     
     # --------------------------------- #
     # LOG IN                            #
@@ -121,7 +122,7 @@ def server(input, output, session):
         
         if current_tab.get() == "Incomplete products":
             # Get products to determine dynamic max for slider
-            products = get_all_products()
+            products = get_incompleted_products()
             if isinstance(products, dict) and "error" in products:
                 return ui.tags.div(
                     ui.tags.p("Incomplete products"),
@@ -129,11 +130,6 @@ def server(input, output, session):
                 )
                 
             df_tmp = pd.json_normalize(products)
-            all_products.set(df_tmp)
-            
-            # Filter inactive products (active == 0); only apply if 'active' column exists
-            if "active" in df_tmp.columns:
-                df_tmp = df_tmp[df_tmp["active"] == 0]
             incomplete_products.set(df_tmp)
             
             total = len(df_tmp.index)
@@ -254,9 +250,10 @@ def server(input, output, session):
             pass
         
         # Decide columns to show
-        base_cols = [c for c in ['id', 'name', 'name_search', 'cluster_id', 'energy', 'protein', 'fat',
+        base_cols = [c for c in ['id', 'name', 'name_search', 'energy', 'protein', 'fat',
            'saturated_fatty_acid', 'carbohydrates', 'unit', 'synonyms', 'brands', 'brands_search', 'bron', 'categories',
            'barcode', 'updated'] if c in df.columns]
+        
         header = ui.tags.tr(
             *[ui.tags.th(col, style="padding:.25rem .5rem; text-align:left; border:1px solid #ddd;") for col in base_cols]
             # ui.tags.th("Actions", style="padding:.25rem .5rem; text-align:left; border: 1px solid #ddd;")
@@ -379,43 +376,55 @@ def server(input, output, session):
             input_id = f"edit_{_sanitize_id(col_name)}"
             val = row[col_name] if col_name in row.index else None
             display_val = "" if (val is None or (isinstance(val, float) and pd.isna(val)) or (isinstance(val, str) and val == "nan")) else str(val)
-            return ui.tags.div(
-                ui.tags.label(col_name, **{"for": input_id}, style="font-weight:600; margin-bottom:.25rem;"),
-                ui.input_text(input_id, None, value=display_val),
-                style="display:flex; flex-direction:column; width:100%; max-width:320px;"
-            )
+            # If product is active (==1) make field unchangeable (read-only)
+            is_readonly = ("active" in row.index and row.get("active") == 1)
+            if is_readonly:
+                return ui.tags.div(
+                    ui.tags.label(col_name, **{"for": input_id}, style="font-weight:600; margin-bottom:.25rem;"),
+                    ui.tags.div(
+                        display_val or "",
+                        id=input_id,
+                        style="padding:.4rem .55rem; background:#f5f5f5; border:1px solid #ddd; border-radius:.35rem; font-size:.85rem; min-height:2rem; display:flex; align-items:center;"
+                    ),
+                    style="display:flex; flex-direction:column; width:100%; max-width:320px;"
+                )
+            else:
+                return ui.tags.div(
+                    ui.tags.label(col_name, **{"for": input_id}, style="font-weight:600; margin-bottom:.25rem;"),
+                    ui.input_text(input_id, None, value=display_val),
+                    style="display:flex; flex-direction:column; width:100%; max-width:320px;"
+                )
 
         primary_rows = [render_field(c) for c in primary_fields]
         nutrition_rows = [render_field(c) for c in nutrition_fields]
         other_rows = [render_field(c) for c in other_fields]
 
         return ui.tags.div(
-            ui.tags.hr(),
             ui.tags.div(
-                ui.tags.h5("Basic Info"),
-                ui.tags.div(
-                    *primary_rows,
-                    style="display:flex; flex-wrap:wrap; gap:1rem; align-items:flex-start;"
-                ),
-                style="display:flex; flex-direction:column; gap:.5rem; margin-bottom:1rem;"
+            ui.tags.h5("Basic Info"),
+            ui.tags.div(
+                *primary_rows,
+                style="display:grid; grid-template-columns: repeat(3, 1fr); gap:1rem; align-items:start;"
+            ),
+            style="display:flex; flex-direction:column; gap:.5rem; margin-bottom:1rem;"
             ),
             ui.tags.hr(),
             ui.tags.div(
-                ui.tags.h5("Nutrition Info"),
-                ui.tags.div(
-                    *nutrition_rows,
-                    style="display:flex; flex-wrap:wrap; gap:1rem; align-items:flex-start;"
-                ),
-                style="display:flex; flex-direction:column; gap:.5rem; margin-bottom:1rem;"
+            ui.tags.h5("Nutrition Info"),
+            ui.tags.div(
+                *nutrition_rows,
+                style="display:grid; grid-template-columns: repeat(3, 1fr); gap:1rem; align-items:start;"
+            ),
+            style="display:flex; flex-direction:column; gap:.5rem; margin-bottom:1rem;"
             ),
             ui.tags.hr(),
             ui.tags.div(
-                ui.tags.h5("Other Fields"),
-                ui.tags.div(
-                    *other_rows,
-                    style="display:flex; flex-wrap:wrap; gap:1rem; align-items:flex-start;"
-                ),
-                style="display:flex; flex-direction:column; gap:.5rem;"
+            ui.tags.h5("Other Fields"),
+            ui.tags.div(
+                *other_rows,
+                style="display:grid; grid-template-columns: repeat(3, 1fr); gap:1rem; align-items:start;"
+            ),
+            style="display:flex; flex-direction:column; gap:.5rem;"
             ),
             style="display:flex; flex-direction:column;"
         )
@@ -428,53 +437,160 @@ def server(input, output, session):
         response_product = get_product_info(pid)
         df = pd.json_normalize(response_product)
         product_to_modify.set(df)
+        
+        # Safely extract product name from the DataFrame (use first row if present)
+        if df is None or df.empty:
+            product_name = ""
+        elif "name" in df.columns:
+            try:
+                product_name = df.iloc[0]["name"]
+            except Exception:
+                product_name = ""
+        else:
+            product_name = ""
+        
         ui.modal_show(
             ui.modal(
-                ui.tags.h4(f"Edit Product ID {pid}"),
-                ui.tags.div(
-                    ui.output_ui("product_edit_form"),
-                    ui.output_ui("cluster_mates"),
-                    style="display:flex; flex-direction:row; gap:1.5rem; align-items:flex-start;"
-                ),
+                ui.tags.h4(f"Product ID {pid} | {product_name}"),
+                ui.tags.hr(),
+                ui.output_ui("show_alike_products"),
+                ui.tags.hr(),
+                ui.output_ui("edit_or_view"),
                 ui.input_action_button("save_product", "Save changes"),
                 easy_close=True,
                 footer=ui.tags.small("Close by clicking outside or Save"),
-                size="l"
+                size="xl"
             )
         )
+        
+    @reactive.effect
+    @reactive.event(input.show_product_info)
+    def _on_show_product_info():
+        show_product_info.set(True)
+        
+    @reactive.effect
+    @reactive.event(input.hide_product_info)
+    def _on_show_product_info():
+        show_product_info.set(False)
+        
+    @render.ui
+    def edit_or_view():
+        if product_to_modify.get().iloc[0]["active"] == 1:
+            return ui.tags.div(
+                ui.output_ui("product_edit_form"),
+                style="display:flex; flex-direction:column; gap:1rem;"
+            )
+            
+        # Dynamically render the edit/view region inside the modal
+        # Re-renders when show_product_info or product_to_modify changes
+        try:
+            show = show_product_info.get()
+        except Exception:
+            show = False
+        if show:
+            return ui.tags.div(
+                ui.input_action_button('hide_product_info', 'Close'),
+                ui.output_ui("product_edit_form"),
+                style="display:flex; flex-direction:column; gap:1rem;"
+            )
+        else:
+            return ui.input_action_button('show_product_info', 'Edit / Show info')
+        
 
     @render.ui
-    def cluster_mates():
+    def show_alike_products():
         df_selected = product_to_modify.get()
         if df_selected is None or df_selected.empty:
             return ui.tags.div()
-        row = df_selected.iloc[0]
-        if 'cluster_id' not in row.index:
-            return ui.tags.div(ui.tags.small("No cluster information available."), class_="panel-box")
-        cluster_id = row['cluster_id']
-        if pd.isna(cluster_id) or (isinstance(cluster_id, str) and cluster_id.strip() == ""):
-            return ui.tags.div(ui.tags.small("This product has no cluster assigned."), class_="panel-box")
-        df_all = all_products.get()
-        if df_all is None or df_all.empty or 'cluster_id' not in df_all.columns:
-            return ui.tags.div(ui.tags.small("Cluster data not available."), class_="panel-box")
-        subset = df_all[(df_all['cluster_id'] == cluster_id) & (df_all['id'] != row.get('id'))]
-        if subset.empty:
-            return ui.tags.div(ui.tags.small("No other products in this cluster."), class_="panel-box")
-        show_cols = [c for c in ['id','name','cluster_id'] if c in subset.columns]
-        header = ui.tags.tr(*[ui.tags.th(c, style="padding:.25rem .5rem; text-align:left; border:1px solid #ddd;") for c in show_cols])
-        body = []
-        for _, r in subset.iterrows():
-            body.append(ui.tags.tr(*[ui.tags.td(str(r.get(c,"")), style="padding:.25rem .5rem; border:1px solid #ddd;") for c in show_cols]))
-        table = ui.tags.table(
-            ui.tags.thead(header),
-            ui.tags.tbody(*body),
+        
+        product_id = df_selected.iloc[0]['id']
+        cluster_id = df_selected.iloc[0]['cluster_id']
+        
+        df_alike_products = get_alike_products(product_id, cluster_id)
+        
+        # Handle possible error response
+        if isinstance(df_alike_products, dict) and "error" in df_alike_products:
+            return ui.tags.div(ui.tags.small("This product has no alike products"), class_="panel-box")
+
+        # Normalize into DataFrame
+        try:
+            df_alike = pd.json_normalize(df_alike_products)
+        except Exception:
+            try:
+                df_alike = pd.DataFrame(df_alike_products)
+            except Exception:
+                df_alike = pd.DataFrame()
+
+        if df_alike.empty:
+            return ui.tags.div(ui.tags.small("No alike products found."), class_="panel-box")
+        
+        df_alike_verified = df_alike[df_alike['active'] == 1]
+        df_alike_unverified = df_alike[df_alike['active'] == 0]
+        
+        # Choose sensible columns to display if present
+        show_cols = [c for c in ['id', 'name', 'energy', 'protein', 'categories','barcode'] if c in df_alike.columns]
+
+        header_verified = ui.tags.tr(
+            *[ui.tags.th(c, style="padding:.25rem .5rem; text-align:left; border:1px solid #ddd;") for c in show_cols]
+        )
+
+        body_rows_verified = []
+        for _, r in df_alike_verified.iterrows():
+            pid = r.get("id")
+            cells = [
+            ui.tags.td(str(r.get(c, "")), style="padding:.25rem .5rem; vertical-align:top; border:1px solid #ddd;")
+            for c in show_cols
+            ]
+            onclick = f"Shiny.setInputValue('modify_product_row', {repr(pid)}, {{priority: 'event'}});"
+            body_rows_verified.append(
+            ui.tags.tr(
+                *cells,
+                onclick=onclick,
+                class_="incompleted_table_rows",
+                style="cursor:pointer;"
+            )
+            )
+
+        table_verified = ui.tags.table(
+            ui.tags.thead(header_verified),
+            ui.tags.tbody(*body_rows_verified),
             style="width:100%; border-collapse:collapse; font-size:.75rem; border:1px solid #ddd;"
         )
+        
+        header_unverified = ui.tags.tr(
+            *[ui.tags.th(c, style="padding:.25rem .5rem; text-align:left; border:1px solid #ddd;") for c in show_cols]
+        )
+
+        body_rows_unverified = []
+        for _, r in df_alike_unverified.iterrows():
+            pid = r.get("id")
+            cells = [
+            ui.tags.td(str(r.get(c, "")), style="padding:.25rem .5rem; vertical-align:top; border:1px solid #ddd;")
+            for c in show_cols
+            ]
+            onclick = f"Shiny.setInputValue('modify_product_row', {repr(pid)}, {{priority: 'event'}});"
+            body_rows_unverified.append(
+            ui.tags.tr(
+                *cells,
+                onclick=onclick,
+                class_="incompleted_table_rows",
+                style="cursor:pointer;"
+            )
+            )
+
+        table_unverified = ui.tags.table(
+            ui.tags.thead(header_unverified),
+            ui.tags.tbody(*body_rows_unverified),
+            style="width:100%; border-collapse:collapse; font-size:.75rem; border:1px solid #ddd;"
+        )
+
         return ui.tags.div(
-            ui.tags.h5("Products in Same Cluster"),
-            table,
-            class_="panel-box",
-            style="min-width:320px;"
+            ui.tags.h5(f"Alike products"),
+            ui.tags.p("Verified products:", style="margin-top:2rem;"),
+            table_verified,
+            ui.tags.p("Unverified products:", style="margin-top:2rem;"),
+            table_unverified,
+            style="width: 100%;"
         )
 
     # @reactive.effect

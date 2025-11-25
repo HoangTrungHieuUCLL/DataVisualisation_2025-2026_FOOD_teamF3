@@ -28,3 +28,12 @@ def get_product_info(product_id):
         return product.json()
     except Exception as e:
         return {"error": str(e)}
+    
+def get_alike_products(product_id, cluster_id):
+    API_URL = "http://127.0.0.1:5000/products/alike/" + str(product_id) + "/" + str(cluster_id)
+        
+    try:
+        products = requests.get(API_URL)
+        return products.json()
+    except Exception as e:
+        return {"error": str(e)}

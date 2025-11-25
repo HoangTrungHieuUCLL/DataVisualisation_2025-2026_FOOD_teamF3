@@ -80,5 +80,23 @@ def get_all_incompleted_products():
     
     return jsonify(incompleted)
 
+# Get all products that are alike product {id}
+@app.route("/products/alike/<int:product_id>/<int:cluster_id>", methods=["GET"])
+def get_alike_products(product_id, cluster_id):
+    conn = connect_to_database()
+    cur = conn.cursor()
+    cur.execute('SELECT * FROM product WHERE cluster_id = %s AND id != %s;', (cluster_id, product_id,))
+    rows = cur.fetchall()
+    
+    # map rows to list[dict] using column names so jsonify can serialize it
+    columns = [desc[0] for desc in cur.description] if cur.description else []
+    results = [dict(zip(columns, row)) for row in rows] if rows else []
+    
+    cur.close()
+    conn.close()
+    
+    return jsonify(results)
+
+
 if __name__ == "__main__":
     app.run(debug=True)
