@@ -1,5 +1,14 @@
 import requests
 
+def get_all_products():
+    API_URL = "http://127.0.0.1:5000/products"
+    
+    try:
+        products = requests.get(API_URL)
+        return products.json()
+    except Exception as e:
+        return {"error": str(e)}
+
 # Get all incompleted products
 def get_incompleted_products():
     API_URL = "http://127.0.0.1:5000/products/incompleted"

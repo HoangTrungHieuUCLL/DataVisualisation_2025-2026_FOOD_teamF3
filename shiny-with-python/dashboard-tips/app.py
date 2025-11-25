@@ -3,7 +3,7 @@ import faicons as fa
 import plotly.express as px
 import requests
 import re
-from services import get_incompleted_products, get_product_info
+from services import get_incompleted_products, get_product_info, get_all_products
 
 
 # Load data and compute static values
@@ -50,6 +50,7 @@ def server(input, output, session):
     login_ok = reactive.Value(False)
     reactive_user_name = reactive.Value("")
     reactive_password = reactive.Value("")
+    all_products = reactive.Value(pd.DataFrame())
     incomplete_products = reactive.Value(pd.DataFrame())
     product_to_modify = reactive.Value(pd.DataFrame())
     current_tab = reactive.Value("Incomplete products")
@@ -120,7 +121,7 @@ def server(input, output, session):
         
         if current_tab.get() == "Incomplete products":
             # Get products to determine dynamic max for slider
-            products = get_incompleted_products()
+            products = get_all_products()
             if isinstance(products, dict) and "error" in products:
                 return ui.tags.div(
                     ui.tags.p("Incomplete products"),
@@ -128,7 +129,13 @@ def server(input, output, session):
                 )
                 
             df_tmp = pd.json_normalize(products)
+            all_products.set(df_tmp)
+            
+            # Filter inactive products (active == 0); only apply if 'active' column exists
+            if "active" in df_tmp.columns:
+                df_tmp = df_tmp[df_tmp["active"] == 0]
             incomplete_products.set(df_tmp)
+            
             total = len(df_tmp.index)
             if total == 0:
                 slider = ui.tags.p("No incomplete products available.")
@@ -247,9 +254,9 @@ def server(input, output, session):
             pass
         
         # Decide columns to show
-        base_cols = [c for c in ['id', 'name', 'name_search', 'energy', 'protein', 'fat',
-       'saturated_fatty_acid', 'carbohydrates', 'unit', 'synonyms', 'brands', 'brands_search', 'bron', 'categories',
-       'barcode', 'updated'] if c in df.columns]
+        base_cols = [c for c in ['id', 'name', 'name_search', 'cluster_id', 'energy', 'protein', 'fat',
+           'saturated_fatty_acid', 'carbohydrates', 'unit', 'synonyms', 'brands', 'brands_search', 'bron', 'categories',
+           'barcode', 'updated'] if c in df.columns]
         header = ui.tags.tr(
             *[ui.tags.th(col, style="padding:.25rem .5rem; text-align:left; border:1px solid #ddd;") for col in base_cols]
             # ui.tags.th("Actions", style="padding:.25rem .5rem; text-align:left; border: 1px solid #ddd;")
@@ -424,12 +431,50 @@ def server(input, output, session):
         ui.modal_show(
             ui.modal(
                 ui.tags.h4(f"Edit Product ID {pid}"),
-                ui.output_ui("product_edit_form"),
+                ui.tags.div(
+                    ui.output_ui("product_edit_form"),
+                    ui.output_ui("cluster_mates"),
+                    style="display:flex; flex-direction:row; gap:1.5rem; align-items:flex-start;"
+                ),
                 ui.input_action_button("save_product", "Save changes"),
                 easy_close=True,
                 footer=ui.tags.small("Close by clicking outside or Save"),
                 size="l"
             )
+        )
+
+    @render.ui
+    def cluster_mates():
+        df_selected = product_to_modify.get()
+        if df_selected is None or df_selected.empty:
+            return ui.tags.div()
+        row = df_selected.iloc[0]
+        if 'cluster_id' not in row.index:
+            return ui.tags.div(ui.tags.small("No cluster information available."), class_="panel-box")
+        cluster_id = row['cluster_id']
+        if pd.isna(cluster_id) or (isinstance(cluster_id, str) and cluster_id.strip() == ""):
+            return ui.tags.div(ui.tags.small("This product has no cluster assigned."), class_="panel-box")
+        df_all = all_products.get()
+        if df_all is None or df_all.empty or 'cluster_id' not in df_all.columns:
+            return ui.tags.div(ui.tags.small("Cluster data not available."), class_="panel-box")
+        subset = df_all[(df_all['cluster_id'] == cluster_id) & (df_all['id'] != row.get('id'))]
+        if subset.empty:
+            return ui.tags.div(ui.tags.small("No other products in this cluster."), class_="panel-box")
+        show_cols = [c for c in ['id','name','cluster_id'] if c in subset.columns]
+        header = ui.tags.tr(*[ui.tags.th(c, style="padding:.25rem .5rem; text-align:left; border:1px solid #ddd;") for c in show_cols])
+        body = []
+        for _, r in subset.iterrows():
+            body.append(ui.tags.tr(*[ui.tags.td(str(r.get(c,"")), style="padding:.25rem .5rem; border:1px solid #ddd;") for c in show_cols]))
+        table = ui.tags.table(
+            ui.tags.thead(header),
+            ui.tags.tbody(*body),
+            style="width:100%; border-collapse:collapse; font-size:.75rem; border:1px solid #ddd;"
+        )
+        return ui.tags.div(
+            ui.tags.h5("Products in Same Cluster"),
+            table,
+            class_="panel-box",
+            style="min-width:320px;"
         )
 
     # @reactive.effect
