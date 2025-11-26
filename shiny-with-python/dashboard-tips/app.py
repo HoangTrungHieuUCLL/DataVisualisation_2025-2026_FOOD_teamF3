@@ -82,6 +82,21 @@ def server(input, output, session):
                 class_="panel-box"
             )
         else:
+            products = get_incompleted_products()
+            if isinstance(products, dict) and "error" in products:
+                return ui.tags.div(
+                    ui.tags.p("Incomplete products"),
+                    ui.tags.p(f"Error loading products: {products['error']}", class_="panel-box")
+                )
+                
+            df_tmp = pd.json_normalize(products)
+            
+            df_with_alike_products = df_tmp[df_tmp['cluster_count'] != 1]
+            df_without_alike_products = df_tmp[df_tmp['cluster_count'] == 1]
+            
+            incomplete_products_with_alike_products.set(df_with_alike_products)
+            incomplete_products_without_alike_products.set(df_without_alike_products)
+            
             return ui.tags.div(
                     ui.tags.h4(f"Hello {reactive_user_name.get()}!"),
                     ui.input_action_button("logout", "Logout"),
@@ -120,83 +135,20 @@ def server(input, output, session):
     def dynamic_control_center():
         if not is_admin():
             return ui.tags.div()
-        
-        if current_tab.get() == "Incomplete products":
-            # Get products to determine dynamic max for slider
-            products = get_incompleted_products()
-            if isinstance(products, dict) and "error" in products:
-                return ui.tags.div(
-                    ui.tags.p("Incomplete products"),
-                    ui.tags.p(f"Error loading products: {products['error']}", class_="panel-box")
-                )
-                
-            df_tmp = pd.json_normalize(products)
-            
-            df_with_alike_products = df_tmp[df_tmp['cluster_count'] != 1]
-            df_without_alike_products = df_tmp[df_tmp['cluster_count'] == 1]
-            
-            incomplete_products_with_alike_products.set(df_with_alike_products)
-            incomplete_products_without_alike_products.set(df_without_alike_products)
-            
-            total = len(df_tmp.index)
-            if total == 0:
-                slider = ui.tags.p("No incomplete products available.")
-                sort_controls = ui.tags.div()
-                search_by_keywords = ui.tags.div()
-            else:
-                
-                # Column choices and placeholder
-                col_choices = list(df_tmp.columns)
-                # Sorting controls with inactive default '-'
-                sort_controls = ui.tags.div(
-                    ui.input_select(
-                        "sort_column",
-                        "Sort column",
-                        choices=["-"] + col_choices,
-                        selected="-"
-                    ),
-                    ui.input_select(
-                        "sort_direction",
-                        "Sort order",
-                        choices=["-", "ASC", "DESC"],
-                        selected="-"
-                    ),
-                    ui.input_action_button("reset_sort", "Reset", style="width:100%"),
-                    style="display:flex; flex-direction:column; gap:1rem;"
-                )
 
-                # Search by keywords (independent of sort) with column placeholder
-                search_by_keywords = ui.tags.div(
-                    ui.input_select(
-                        "search_in_column",
-                        "Search in column",
-                        choices=["-"] + col_choices,
-                        selected="-"
-                    ),
-                    ui.input_text('keywords','Keywords'),
-                    ui.input_action_button('reset_search_by_keywords', 'Reset', style="width:100%")
-                )
-            return ui.tags.div(
-                ui.tags.hr(),
-                ui.tags.div(
-                    sort_controls,
-                    class_="panel-box"
-                ),
-                ui.tags.div(
-                    search_by_keywords,
-                    class_="panel-box"
-                ),
-                ui.tags.div(
-                    ui.input_action_button('reset_all', 'Reset all', class_="reset_all_button"),
-                    class_="panel-box"
-                ),
-                style="display:flex; flex-direction:column; gap: 1rem;"
-            )
-        else:
-            return ui.tags.div(
-                "Alike products",
+        # General keyword search across all columns
+        search_by_keywords = ui.tags.div(
+            ui.input_text('keywords','Search'),
+            ui.input_action_button('reset_search_by_keywords', 'Reset', style="width:100%")
+        )
+        return ui.tags.div(
+            ui.tags.hr(),
+            ui.tags.div(
+                search_by_keywords,
                 class_="panel-box"
-                )
+            ),
+            style="display:flex; flex-direction:column; gap: 1rem;"
+        )
 
     # INCOMPLETE TAB #
     @render.text
@@ -255,6 +207,15 @@ def server(input, output, session):
         if (df_with is None or df_with.empty):
             return ui.tags.div("No products found.")
 
+        # Apply general keyword search
+        try:
+            keywords = input.keywords()
+            if keywords:
+                mask = df_with.astype(str).apply(lambda col: col.str.contains(keywords, case=False, na=False))
+                df_with = df_with[mask.any(axis=1)]
+        except Exception:
+            pass
+
         table_with = render_table(df_with, "There are similar products to these products:")
 
         return ui.tags.div(
@@ -272,6 +233,15 @@ def server(input, output, session):
         if (df_without is None or df_without.empty):
             return ui.tags.div("No products found.")
 
+        # Apply general keyword search
+        try:
+            keywords = input.keywords()
+            if keywords:
+                mask = df_without.astype(str).apply(lambda col: col.str.contains(keywords, case=False, na=False))
+                df_without = df_without[mask.any(axis=1)]
+        except Exception:
+            pass
+
         table_without = render_table(df_without, "These products are unique:")
 
         return ui.tags.div(
@@ -283,7 +253,6 @@ def server(input, output, session):
     @reactive.event(input.reset_search_by_keywords)
     def _on_reset_search_by_keywords():
         # Clear the keywords text input
-        session.send_input_message("search_in_column", {"value": "-"})
         session.send_input_message("keywords", {"value": ""})
 
     @reactive.effect
@@ -296,7 +265,6 @@ def server(input, output, session):
     @reactive.effect
     @reactive.event(input.reset_all)
     def _on_reset_all():
-        session.send_input_message("search_in_column", {"value": "-"})
         session.send_input_message("keywords", {"value": ""})
         session.send_input_message("sort_column", {"value": "-"})
         session.send_input_message("sort_direction", {"value": "-"})
