@@ -50,8 +50,9 @@ def server(input, output, session):
     login_ok = reactive.Value(False)
     reactive_user_name = reactive.Value("")
     reactive_password = reactive.Value("")
-    all_products = reactive.Value(pd.DataFrame())
     incomplete_products = reactive.Value(pd.DataFrame())
+    incomplete_products_with_alike_products = reactive.Value(pd.DataFrame())
+    incomplete_products_without_alike_products = reactive.Value(pd.DataFrame())
     product_to_modify = reactive.Value(pd.DataFrame())
     current_tab = reactive.Value("Incomplete products")
     show_product_info = reactive.Value(False)
@@ -130,7 +131,12 @@ def server(input, output, session):
                 )
                 
             df_tmp = pd.json_normalize(products)
-            incomplete_products.set(df_tmp)
+            
+            df_with_alike_products = df_tmp[df_tmp['cluster_count'] != 1]
+            df_without_alike_products = df_tmp[df_tmp['cluster_count'] == 1]
+            
+            incomplete_products_with_alike_products.set(df_with_alike_products)
+            incomplete_products_without_alike_products.set(df_without_alike_products)
             
             total = len(df_tmp.index)
             if total == 0:
@@ -218,9 +224,10 @@ def server(input, output, session):
         if not is_admin():
             return ui.tags.div()
         
-        df = incomplete_products.get()
+        df_with = incomplete_products_with_alike_products.get()
+        df_without = incomplete_products_without_alike_products.get()
         
-        if df.empty:
+        if (df_with is None or df_with.empty) and (df_without is None or df_without.empty):
             return ui.tags.div("No products found.")
 
         # Apply limit from slider (default 10 if slider not yet mounted)
@@ -229,57 +236,53 @@ def server(input, output, session):
             limit = input.incomplete_limit()
         except Exception:
             pass
-        df = df.head(limit)
-        
-        # Apply search if active (before sorting/limit for efficiency)
-        try:
-            search_by_keyword_col = input.search_in_column()
-            keywords = input.keywords()
-            if search_by_keyword_col in df.columns and search_by_keyword_col != "-" and keywords:
-                df = df[df[search_by_keyword_col].astype(str).str.contains(keywords, case=False, na=False)]
-        except Exception:
-            pass
 
-        # Apply sorting if active
-        try:
-            sort_col = input.sort_column()
-            sort_dir = input.sort_direction()
-            if sort_col in df.columns and sort_col != "-" and sort_dir in ["ASC", "DESC"]:
-                df = df.sort_values(by=sort_col, ascending=(sort_dir == "ASC"))
-        except Exception:
-            pass
-        
-        # Decide columns to show
-        base_cols = [c for c in ['id', 'name', 'name_search', 'energy', 'protein', 'fat',
-           'saturated_fatty_acid', 'carbohydrates', 'unit', 'synonyms', 'brands', 'brands_search', 'bron', 'categories',
-           'barcode', 'updated'] if c in df.columns]
-        
-        header = ui.tags.tr(
-            *[ui.tags.th(col, style="padding:.25rem .5rem; text-align:left; border:1px solid #ddd;") for col in base_cols]
-            # ui.tags.th("Actions", style="padding:.25rem .5rem; text-align:left; border: 1px solid #ddd;")
-        )
-        body_rows = []
-        for _, row in df.iterrows():
-            pid = row.get("id")
-            cells = [ui.tags.td(str(row.get(col,"")), style="padding:.25rem .5rem; vertical-align:top; border: 1px solid #ddd;") for col in base_cols]
-            
-            # Make the entire row clickable to trigger modify
-            body_rows.append(
-                ui.tags.tr(
-                    *cells,
-                    onclick=f"Shiny.setInputValue('modify_product_row', {pid}, {{priority: 'event'}});",
-                    class_="incompleted_table_rows",
-                    style="cursor:pointer;"
-                )
+        def render_table(df: pd.DataFrame, title: str):
+            if df is None or df.empty:
+                return ui.tags.div(ui.tags.h5(title), ui.tags.p("No products.", style="color:#666;"))
+            df = df.head(limit)
+
+            # Decide columns to show (use sensible defaults if present)
+            base_cols = [c for c in ['id', 'name', 'name_search', 'energy', 'protein', 'fat',
+               'saturated_fatty_acid', 'carbohydrates', 'unit', 'synonyms', 'brands', 'brands_search', 'bron', 'categories',
+               'barcode', 'updated'] if c in df.columns]
+
+            header = ui.tags.tr(
+                *[ui.tags.th(col, style="padding:.25rem .5rem; text-align:left; border:1px solid #ddd;") for col in base_cols]
             )
-        table = ui.tags.table(
-            ui.tags.thead(header),
-            ui.tags.tbody(*body_rows),
-            style="width:100%; border-collapse:collapse; font-size:.85rem; border:1px solid #ddd;"
-        )
+            body_rows = []
+            for _, row in df.iterrows():
+                pid = row.get("id")
+                cells = [ui.tags.td(str(row.get(col, "")), style="padding:.25rem .5rem; vertical-align:top; border: 1px solid #ddd;") for col in base_cols]
+                onclick = f"Shiny.setInputValue('modify_product_row', {repr(pid)}, {{priority: 'event'}});"
+                body_rows.append(
+                    ui.tags.tr(
+                        *cells,
+                        onclick=onclick,
+                        class_="incompleted_table_rows",
+                        style="cursor:pointer;"
+                    )
+                )
+
+            table = ui.tags.table(
+                ui.tags.thead(header),
+                ui.tags.tbody(*body_rows),
+                style="width:100%; border-collapse:collapse; font-size:.85rem; border:1px solid #ddd;"
+            )
+            return ui.tags.div(
+                ui.tags.h5(f"{title} (showing {min(len(df.index), limit)} of {len(df.index)})"),
+                table,
+                class_="panel-box",
+                style="margin-bottom:1rem;"
+            )
+
+        table_with = render_table(df_with, "Incomplete products with alike products")
+        table_without = render_table(df_without, "Incomplete products without alike products")
+
         return ui.tags.div(
-            table,
-            style="margin-top:1rem; margin-bottom:1rem"
+            table_with,
+            table_without,
+            style="display:flex; flex-direction:column; gap:1rem; margin-top:1rem; margin-bottom:1rem;"
         )
         
     @reactive.effect
