@@ -29,9 +29,9 @@ app_ui = ui.page_sidebar(
     ui.layout_columns(
         ui.navset_tab(
             ui.nav_panel("Incomplete products", 
-                         ui.output_text("incomplete_products_instruction"),
-                         ui.output_ui("incomplete_products_listing")),
-            ui.nav_panel("Alike products"),
+                         ui.output_ui("incomplete_products_with_alike_products_listing")),
+            ui.nav_panel("Unique incomplete products",
+                         ui.output_ui("incomplete_products_without_alike_products_listing")),
             id="main_tabs",
             selected="Incomplete products"
         )
@@ -144,16 +144,6 @@ def server(input, output, session):
                 sort_controls = ui.tags.div()
                 search_by_keywords = ui.tags.div()
             else:
-                # Control number of producs to show
-                default_val = 10 if total >= 10 else total
-                slider = ui.input_slider(
-                    "incomplete_limit",
-                    "Number of products",
-                    min=1,
-                    max=total,
-                    value=default_val,
-                    step=1
-                )
                 
                 # Column choices and placeholder
                 col_choices = list(df_tmp.columns)
@@ -189,10 +179,6 @@ def server(input, output, session):
             return ui.tags.div(
                 ui.tags.hr(),
                 ui.tags.div(
-                    slider,
-                    class_="panel-box"
-                ),
-                ui.tags.div(
                     sort_controls,
                     class_="panel-box"
                 ),
@@ -218,69 +204,77 @@ def server(input, output, session):
         if not is_admin():
             return ""
         return "Click on the product to check and modify its information."
+        
+    def render_table(df: pd.DataFrame, title: str):
+        if df is None or df.empty:
+            return ui.tags.div(ui.tags.h5(title), ui.tags.p("No products.", style="color:#666;"))
+
+        # Decide columns to show (use sensible defaults if present)
+        base_cols = [c for c in ['id', 'name', 'name_search', 'energy', 'protein', 'fat',
+                                    'saturated_fatty_acid', 'carbohydrates', 'unit', 'synonyms', 'brands', 'brands_search', 'bron', 'categories',
+                                    'barcode', 'updated'] if c in df.columns]
+
+        header = ui.tags.tr(
+            *[ui.tags.th(col, style="padding:.25rem .5rem; text-align:left; border:1px solid #ddd;") for col in base_cols]
+        )
+        body_rows = []
+        for _, row in df.iterrows():
+            pid = row.get("id")
+            cells = [ui.tags.td(str(row.get(
+                col, "")), style="padding:.25rem .5rem; vertical-align:top; border: 1px solid #ddd;") for col in base_cols]
+            onclick = f"Shiny.setInputValue('modify_product_row', {repr(pid)}, {{priority: 'event'}});"
+            body_rows.append(
+                ui.tags.tr(
+                    *cells,
+                    onclick=onclick,
+                    class_="incompleted_table_rows",
+                    style="cursor:pointer;"
+                )
+            )
+
+        table = ui.tags.table(
+            ui.tags.thead(header),
+            ui.tags.tbody(*body_rows),
+            style="width:100%; border-collapse:collapse; font-size:.85rem; border:1px solid #ddd;"
+        )
+        
+        return ui.tags.div(
+            ui.tags.h5(f"{title}"),
+            table,
+            class_="panel-box",
+            style="margin-bottom:1rem;"
+        )
     
     @render.ui
-    def incomplete_products_listing():
+    def incomplete_products_with_alike_products_listing():
         if not is_admin():
             return ui.tags.div()
         
         df_with = incomplete_products_with_alike_products.get()
-        df_without = incomplete_products_without_alike_products.get()
         
-        if (df_with is None or df_with.empty) and (df_without is None or df_without.empty):
+        if (df_with is None or df_with.empty):
             return ui.tags.div("No products found.")
 
-        # Apply limit from slider (default 10 if slider not yet mounted)
-        limit = 10
-        try:
-            limit = input.incomplete_limit()
-        except Exception:
-            pass
-
-        def render_table(df: pd.DataFrame, title: str):
-            if df is None or df.empty:
-                return ui.tags.div(ui.tags.h5(title), ui.tags.p("No products.", style="color:#666;"))
-            df = df.head(limit)
-
-            # Decide columns to show (use sensible defaults if present)
-            base_cols = [c for c in ['id', 'name', 'name_search', 'energy', 'protein', 'fat',
-               'saturated_fatty_acid', 'carbohydrates', 'unit', 'synonyms', 'brands', 'brands_search', 'bron', 'categories',
-               'barcode', 'updated'] if c in df.columns]
-
-            header = ui.tags.tr(
-                *[ui.tags.th(col, style="padding:.25rem .5rem; text-align:left; border:1px solid #ddd;") for col in base_cols]
-            )
-            body_rows = []
-            for _, row in df.iterrows():
-                pid = row.get("id")
-                cells = [ui.tags.td(str(row.get(col, "")), style="padding:.25rem .5rem; vertical-align:top; border: 1px solid #ddd;") for col in base_cols]
-                onclick = f"Shiny.setInputValue('modify_product_row', {repr(pid)}, {{priority: 'event'}});"
-                body_rows.append(
-                    ui.tags.tr(
-                        *cells,
-                        onclick=onclick,
-                        class_="incompleted_table_rows",
-                        style="cursor:pointer;"
-                    )
-                )
-
-            table = ui.tags.table(
-                ui.tags.thead(header),
-                ui.tags.tbody(*body_rows),
-                style="width:100%; border-collapse:collapse; font-size:.85rem; border:1px solid #ddd;"
-            )
-            return ui.tags.div(
-                ui.tags.h5(f"{title} (showing {min(len(df.index), limit)} of {len(df.index)})"),
-                table,
-                class_="panel-box",
-                style="margin-bottom:1rem;"
-            )
-
-        table_with = render_table(df_with, "Incomplete products with alike products")
-        table_without = render_table(df_without, "Incomplete products without alike products")
+        table_with = render_table(df_with, "There are similar products to these products:")
 
         return ui.tags.div(
             table_with,
+            style="display:flex; flex-direction:column; gap:1rem; margin-top:1rem; margin-bottom:1rem;"
+        )
+        
+    @render.ui
+    def incomplete_products_without_alike_products_listing():
+        if not is_admin():
+            return ui.tags.div()
+        
+        df_without = incomplete_products_without_alike_products.get()
+        
+        if (df_without is None or df_without.empty):
+            return ui.tags.div("No products found.")
+
+        table_without = render_table(df_without, "These products are unique:")
+
+        return ui.tags.div(
             table_without,
             style="display:flex; flex-direction:column; gap:1rem; margin-top:1rem; margin-bottom:1rem;"
         )
