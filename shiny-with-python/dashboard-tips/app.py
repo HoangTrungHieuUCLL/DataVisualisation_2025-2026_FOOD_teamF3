@@ -28,12 +28,12 @@ app_ui = ui.page_sidebar(
     ),
     ui.layout_columns(
         ui.navset_tab(
-            ui.nav_panel("Incomplete products", 
+            ui.nav_panel("Incomplete products with alike products", 
                          ui.output_ui("incomplete_products_with_alike_products_listing")),
             ui.nav_panel("Unique incomplete products",
                          ui.output_ui("incomplete_products_without_alike_products_listing")),
             id="main_tabs",
-            selected="Incomplete products"
+            selected="Incomplete products with alike products"
         )
     ),
     ui.include_css(app_dir / "styles.css"),
@@ -50,12 +50,10 @@ def server(input, output, session):
     login_ok = reactive.Value(False)
     reactive_user_name = reactive.Value("")
     reactive_password = reactive.Value("")
-    incomplete_products = reactive.Value(pd.DataFrame())
     incomplete_products_with_alike_products = reactive.Value(pd.DataFrame())
     incomplete_products_without_alike_products = reactive.Value(pd.DataFrame())
     product_to_modify = reactive.Value(pd.DataFrame())
-    current_tab = reactive.Value("Incomplete products")
-    show_product_info = reactive.Value(False)
+    # current_tab = reactive.Value("Incomplete products with alike products")
     
     # --------------------------------- #
     # LOG IN                            #
@@ -65,11 +63,11 @@ def server(input, output, session):
         return login_ok()
     
     # Track selected tab and update current_tab reactive value
-    @reactive.effect
-    def _track_current_tab():
-        tab = input.main_tabs()
-        if tab:
-            current_tab.set(tab)
+    # @reactive.effect
+    # def _track_current_tab():
+    #     tab = input.main_tabs()
+    #     if tab:
+    #         current_tab.set(tab)
     
     @render.ui
     def login_card():
@@ -133,8 +131,23 @@ def server(input, output, session):
     # Filtering
     @render.ui
     def dynamic_control_center():
-        if not is_admin():
-            return ui.tags.div()
+        # if not is_admin():
+        #     return ui.tags.div()
+        
+        products = get_incompleted_products()
+        if isinstance(products, dict) and "error" in products:
+            return ui.tags.div(
+                ui.tags.p("Incomplete products"),
+                ui.tags.p(f"Error loading products: {products['error']}", class_="panel-box")
+            )
+            
+        df_tmp = pd.json_normalize(products)
+        
+        df_with_alike_products = df_tmp[df_tmp['cluster_count'] != 1]
+        df_without_alike_products = df_tmp[df_tmp['cluster_count'] == 1]
+        
+        incomplete_products_with_alike_products.set(df_with_alike_products)
+        incomplete_products_without_alike_products.set(df_without_alike_products)
 
         # General keyword search across all columns
         search_by_keywords = ui.tags.div(
@@ -153,18 +166,17 @@ def server(input, output, session):
     # INCOMPLETE TAB #
     @render.text
     def incomplete_products_instruction():
-        if not is_admin():
-            return ""
+        # if not is_admin():
+        #     return ""
         return "Click on the product to check and modify its information."
-        
+    
+    # Render table
     def render_table(df: pd.DataFrame, title: str):
         if df is None or df.empty:
             return ui.tags.div(ui.tags.h5(title), ui.tags.p("No products.", style="color:#666;"))
 
         # Decide columns to show (use sensible defaults if present)
-        base_cols = [c for c in ['id', 'name', 'name_search', 'energy', 'protein', 'fat',
-                                    'saturated_fatty_acid', 'carbohydrates', 'unit', 'synonyms', 'brands', 'brands_search', 'bron', 'categories',
-                                    'barcode', 'updated'] if c in df.columns]
+        base_cols = [c for c in ['id', 'name', 'energy', 'unit', 'synonyms', 'brands', 'categories', 'updated'] if c in df.columns]
 
         header = ui.tags.tr(
             *[ui.tags.th(col, style="padding:.25rem .5rem; text-align:left; border:1px solid #ddd;") for col in base_cols]
@@ -187,20 +199,19 @@ def server(input, output, session):
         table = ui.tags.table(
             ui.tags.thead(header),
             ui.tags.tbody(*body_rows),
-            style="width:100%; border-collapse:collapse; font-size:.85rem; border:1px solid #ddd;"
+            style="font-size:.85rem; border:1px solid #ddd;"
         )
         
         return ui.tags.div(
             ui.tags.h5(f"{title}"),
             table,
-            class_="panel-box",
             style="margin-bottom:1rem;"
         )
     
     @render.ui
     def incomplete_products_with_alike_products_listing():
-        if not is_admin():
-            return ui.tags.div()
+        # if not is_admin():
+        #     return ui.tags.div()
         
         df_with = incomplete_products_with_alike_products.get()
         
@@ -225,8 +236,8 @@ def server(input, output, session):
         
     @render.ui
     def incomplete_products_without_alike_products_listing():
-        if not is_admin():
-            return ui.tags.div()
+        # if not is_admin():
+        #     return ui.tags.div()
         
         df_without = incomplete_products_without_alike_products.get()
         
@@ -254,13 +265,6 @@ def server(input, output, session):
     def _on_reset_search_by_keywords():
         # Clear the keywords text input
         session.send_input_message("keywords", {"value": ""})
-
-    @reactive.effect
-    @reactive.event(input.reset_sort)
-    def _on_reset_sort():
-        # Reset sorting selects to inactive '-'
-        session.send_input_message("sort_column", {"value": "-"})
-        session.send_input_message("sort_direction", {"value": "-"})
         
     @reactive.effect
     @reactive.event(input.reset_all)
@@ -363,34 +367,41 @@ def server(input, output, session):
         primary_rows = [render_field(c) for c in primary_fields]
         nutrition_rows = [render_field(c) for c in nutrition_fields]
         other_rows = [render_field(c) for c in other_fields]
+        
+        if df.iloc[0]['active'] == 1:
+            save_changes_button = ui.tags.div()
+        else:
+            save_changes_button = ui.input_action_button('save_changes', "Save changes",
+                                                         style='width: 15rem')
 
         return ui.tags.div(
             ui.tags.div(
-            ui.tags.h5("Basic Info"),
-            ui.tags.div(
-                *primary_rows,
-                style="display:grid; grid-template-columns: repeat(3, 1fr); gap:1rem; align-items:start;"
+                ui.tags.h5("Basic Info"),
+                ui.tags.div(
+                    *primary_rows,
+                    style="display:grid; grid-template-columns: repeat(3, 1fr); gap:1rem; align-items:start;"
+                ),
+                style="display:flex; flex-direction:column; gap:.5rem; margin-bottom:1rem;"
+                ),
+                ui.tags.hr(),
+                ui.tags.div(
+                ui.tags.h5("Nutrition Info"),
+                ui.tags.div(
+                    *nutrition_rows,
+                    style="display:grid; grid-template-columns: repeat(3, 1fr); gap:1rem; align-items:start;"
+                ),
+                style="display:flex; flex-direction:column; gap:.5rem; margin-bottom:1rem;"
+                ),
+                ui.tags.hr(),
+                ui.tags.div(
+                ui.tags.h5("Other Fields"),
+                ui.tags.div(
+                    *other_rows,
+                    style="display:grid; grid-template-columns: repeat(3, 1fr); gap:1rem; align-items:start;"
+                ),
+                style="display:flex; flex-direction:column; gap:.5rem; margin-bottom:1rem;"
             ),
-            style="display:flex; flex-direction:column; gap:.5rem; margin-bottom:1rem;"
-            ),
-            ui.tags.hr(),
-            ui.tags.div(
-            ui.tags.h5("Nutrition Info"),
-            ui.tags.div(
-                *nutrition_rows,
-                style="display:grid; grid-template-columns: repeat(3, 1fr); gap:1rem; align-items:start;"
-            ),
-            style="display:flex; flex-direction:column; gap:.5rem; margin-bottom:1rem;"
-            ),
-            ui.tags.hr(),
-            ui.tags.div(
-            ui.tags.h5("Other Fields"),
-            ui.tags.div(
-                *other_rows,
-                style="display:grid; grid-template-columns: repeat(3, 1fr); gap:1rem; align-items:start;"
-            ),
-            style="display:flex; flex-direction:column; gap:.5rem;"
-            ),
+            save_changes_button,
             style="display:flex; flex-direction:column;"
         )
 
@@ -414,53 +425,31 @@ def server(input, output, session):
         else:
             product_name = ""
         
+        close_edit_form_button = ui.input_action_button('close_edit_form', 'X',
+                                                        style='border: 1px solid #ddd; height: 30px; width: 30px; text-align: center; padding: 0')
+        
         ui.modal_show(
             ui.modal(
-                ui.tags.h4(f"Product ID {pid} | {product_name}"),
+                ui.tags.div(
+                    ui.tags.h4(f"Product ID {pid} | {product_name}"),
+                    close_edit_form_button,
+                    style='display: flex; flex-direction: row; justify-content: space-between'
+                ),
                 ui.tags.hr(),
                 ui.output_ui("show_alike_products"),
                 ui.tags.hr(),
-                ui.output_ui("edit_or_view"),
-                ui.input_action_button("save_product", "Save changes"),
-                easy_close=True,
-                footer=ui.tags.small("Close by clicking outside or Save"),
+                ui.output_ui("product_edit_form"),
+                # This is to remove the default "Dismiss" button
+                footer=ui.tags.div(),
                 size="xl"
             )
         )
-        
+
+    # Close the currently open modal when the X button is clicked
     @reactive.effect
-    @reactive.event(input.show_product_info)
-    def _on_show_product_info():
-        show_product_info.set(True)
-        
-    @reactive.effect
-    @reactive.event(input.hide_product_info)
-    def _on_show_product_info():
-        show_product_info.set(False)
-        
-    @render.ui
-    def edit_or_view():
-        if product_to_modify.get().iloc[0]["active"] == 1:
-            return ui.tags.div(
-                ui.output_ui("product_edit_form"),
-                style="display:flex; flex-direction:column; gap:1rem;"
-            )
-            
-        # Dynamically render the edit/view region inside the modal
-        # Re-renders when show_product_info or product_to_modify changes
-        try:
-            show = show_product_info.get()
-        except Exception:
-            show = False
-        if show:
-            return ui.tags.div(
-                ui.input_action_button('hide_product_info', 'Close'),
-                ui.output_ui("product_edit_form"),
-                style="display:flex; flex-direction:column; gap:1rem;"
-            )
-        else:
-            return ui.input_action_button('show_product_info', 'Edit / Show info')
-        
+    @reactive.event(input.close_edit_form)
+    def _on_close_edit_form():
+        ui.modal_remove()
 
     @render.ui
     def show_alike_products():
