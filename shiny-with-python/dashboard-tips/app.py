@@ -55,7 +55,6 @@ def server(input, output, session):
     product_to_modify = reactive.Value(pd.DataFrame())
     incomplete_products_with_alike_products = reactive.Value(pd.DataFrame())
     incomplete_products_without_alike_products = reactive.Value(pd.DataFrame())
-# clicked_products as a simple reactive-backed list with an append helper
     class _ClickedProducts:
         def __init__(self):
             self._rv = reactive.Value([])  # This will be a list of product dicts
@@ -78,6 +77,9 @@ def server(input, output, session):
             # Remove the dictionary with the matching pid
             cur = [p for p in cur if p.get('id') != pid]
             self._rv.set(cur)
+            
+        def remove_all(self):
+            self._rv.set([])
 
     clicked_products = _ClickedProducts()
     # current_tab = reactive.Value("Incomplete products with alike products")
@@ -476,6 +478,7 @@ def server(input, output, session):
     @reactive.effect
     @reactive.event(input.close_edit_form)
     def _on_close_edit_form():
+        clicked_products.remove_all()
         ui.modal_remove()
 
     @render.ui
@@ -513,15 +516,19 @@ def server(input, output, session):
 
         header_verified = ui.tags.tr(
             ui.tags.th("", style="padding:.25rem .5rem; text-align:center; border:1px solid #ddd; width:2rem;"),
-            *[ui.tags.th(c, style="padding:.25rem .5rem; text-align:left; border:1px solid #ddd;") for c in show_cols]
+            *[ui.tags.th(c, style="padding:.25rem .5rem; text-align:left; border:1px solid #ddd;") for c in show_cols],
+            ui.tags.th("Action", style="padding:.25rem .5rem; text-align:left; border:1px solid #ddd;")
         )
+
+        clicked_list = clicked_products.get() or []
+        has_clicked_items = len(clicked_list) > 0
 
         body_rows_verified = []
         for _, r in df_alike_verified.iterrows():
             pid = r.get("id")
             product_json = json.dumps(r.to_dict())
             # Checkbox cell (prevent row click when toggled)
-            is_checked = any(p.get('id') == pid for p in (clicked_products.get() or []))
+            is_checked = any(p.get('id') == pid for p in clicked_list)
             checkbox_td = ui.tags.td(
                 ui.tags.input(
                     type="checkbox",
@@ -530,6 +537,20 @@ def server(input, output, session):
                     onclick=f"event.stopPropagation(); Shiny.setInputValue('toggle_checked_product', {{'product': {product_json}, 'checked': event.target.checked}}, {{priority: 'event'}})"
                 ),
                 style="padding:.25rem .5rem; vertical-align:top; border:1px solid #ddd; text-align:center;"
+            )
+
+            link_btn = ui.tags.div()
+            if has_clicked_items and not is_checked:
+                link_btn = ui.tags.button(
+                    "Link",
+                    type="button",
+                    onclick=f"event.stopPropagation(); Shiny.setInputValue('link_product', {repr(pid)}, {{priority: 'event'}})",
+                    style="padding: 2px 6px; font-size: 0.75rem; cursor: pointer;"
+                )
+            
+            action_td = ui.tags.td(
+                link_btn,
+                style="padding:.25rem .5rem; vertical-align:top; border:1px solid #ddd;"
             )
 
             cells = [
@@ -541,6 +562,7 @@ def server(input, output, session):
             ui.tags.tr(
                 checkbox_td,
                 *cells,
+                action_td,
                 onclick=onclick,
                 class_="incompleted_table_rows",
                 style="cursor:pointer;"
@@ -555,7 +577,8 @@ def server(input, output, session):
         
         header_unverified = ui.tags.tr(
             ui.tags.th("", style="padding:.25rem .5rem; text-align:center; border:1px solid #ddd; width:2rem;"),
-            *[ui.tags.th(c, style="padding:.25rem .5rem; text-align:left; border:1px solid #ddd;") for c in show_cols]
+            *[ui.tags.th(c, style="padding:.25rem .5rem; text-align:left; border:1px solid #ddd;") for c in show_cols],
+            ui.tags.th("Action", style="padding:.25rem .5rem; text-align:left; border:1px solid #ddd;")
         )
 
         body_rows_unverified = []
@@ -564,7 +587,7 @@ def server(input, output, session):
             product_json = json.dumps(r.to_dict())
             
             # Checkbox cell (prevent row click when toggled)
-            is_checked = any(p.get('id') == pid for p in (clicked_products.get() or []))
+            is_checked = any(p.get('id') == pid for p in clicked_list)
             checkbox_td = ui.tags.td(
                 ui.tags.input(
                     type="checkbox", 
@@ -573,6 +596,20 @@ def server(input, output, session):
                     onclick=f"event.stopPropagation(); Shiny.setInputValue('toggle_checked_product', {{'product': {product_json}, 'checked': event.target.checked}}, {{priority: 'event'}})"
                 ),
                 style="padding:.25rem .5rem; vertical-align:top; border:1px solid #ddd; text-align:center;"
+            )
+
+            link_btn = ui.tags.div()
+            if has_clicked_items and not is_checked:
+                link_btn = ui.tags.button(
+                    "Link",
+                    type="button",
+                    onclick=f"event.stopPropagation(); Shiny.setInputValue('link_product', {repr(pid)}, {{priority: 'event'}})",
+                    style="padding: 2px 6px; font-size: 0.75rem; cursor: pointer;"
+                )
+            
+            action_td = ui.tags.td(
+                link_btn,
+                style="padding:.25rem .5rem; vertical-align:top; border:1px solid #ddd;"
             )
 
             cells = [
@@ -584,6 +621,7 @@ def server(input, output, session):
             ui.tags.tr(
                 checkbox_td,
                 *cells,
+                action_td,
                 onclick=onclick,
                 class_="incompleted_table_rows",
                 style="cursor:pointer;"
