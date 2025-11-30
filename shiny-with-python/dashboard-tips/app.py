@@ -1,8 +1,10 @@
+import ast
 import string
 import faicons as fa
 import plotly.express as px
 import requests
 import re
+import json
 from services import get_incompleted_products, get_product_info, get_all_products, get_alike_products
 
 
@@ -50,9 +52,34 @@ def server(input, output, session):
     login_ok = reactive.Value(False)
     reactive_user_name = reactive.Value("")
     reactive_password = reactive.Value("")
+    product_to_modify = reactive.Value(pd.DataFrame())
     incomplete_products_with_alike_products = reactive.Value(pd.DataFrame())
     incomplete_products_without_alike_products = reactive.Value(pd.DataFrame())
-    product_to_modify = reactive.Value(pd.DataFrame())
+# clicked_products as a simple reactive-backed list with an append helper
+    class _ClickedProducts:
+        def __init__(self):
+            self._rv = reactive.Value([])  # This will be a list of product dicts
+
+        def get(self):
+            return self._rv.get()
+
+        def set(self, v):
+            self._rv.set(v)
+
+        def append(self, product_dict):
+            cur = list(self._rv.get() or [])
+            # Avoid duplicates by checking for pid
+            if not any(p.get('id') == product_dict.get('id') for p in cur):
+                cur.append(product_dict)
+                self._rv.set(cur)
+            
+        def remove(self, pid):
+            cur = list(self._rv.get() or [])
+            # Remove the dictionary with the matching pid
+            cur = [p for p in cur if p.get('id') != pid]
+            self._rv.set(cur)
+
+    clicked_products = _ClickedProducts()
     # current_tab = reactive.Value("Incomplete products with alike products")
     
     # --------------------------------- #
@@ -485,12 +512,26 @@ def server(input, output, session):
         show_cols = [c for c in ['id', 'name', 'energy', 'protein', 'categories','barcode'] if c in df_alike.columns]
 
         header_verified = ui.tags.tr(
+            ui.tags.th("", style="padding:.25rem .5rem; text-align:center; border:1px solid #ddd; width:2rem;"),
             *[ui.tags.th(c, style="padding:.25rem .5rem; text-align:left; border:1px solid #ddd;") for c in show_cols]
         )
 
         body_rows_verified = []
         for _, r in df_alike_verified.iterrows():
             pid = r.get("id")
+            product_json = json.dumps(r.to_dict())
+            # Checkbox cell (prevent row click when toggled)
+            is_checked = any(p.get('id') == pid for p in (clicked_products.get() or []))
+            checkbox_td = ui.tags.td(
+                ui.tags.input(
+                    type="checkbox",
+                    id=f"alike_select_verified_{pid}",
+                    checked="checked" if is_checked else None,
+                    onclick=f"event.stopPropagation(); Shiny.setInputValue('toggle_checked_product', {{'product': {product_json}, 'checked': event.target.checked}}, {{priority: 'event'}})"
+                ),
+                style="padding:.25rem .5rem; vertical-align:top; border:1px solid #ddd; text-align:center;"
+            )
+
             cells = [
             ui.tags.td(str(r.get(c, "")), style="padding:.25rem .5rem; vertical-align:top; border:1px solid #ddd;")
             for c in show_cols
@@ -498,6 +539,7 @@ def server(input, output, session):
             onclick = f"Shiny.setInputValue('modify_product_row', {repr(pid)}, {{priority: 'event'}});"
             body_rows_verified.append(
             ui.tags.tr(
+                checkbox_td,
                 *cells,
                 onclick=onclick,
                 class_="incompleted_table_rows",
@@ -512,12 +554,27 @@ def server(input, output, session):
         )
         
         header_unverified = ui.tags.tr(
+            ui.tags.th("", style="padding:.25rem .5rem; text-align:center; border:1px solid #ddd; width:2rem;"),
             *[ui.tags.th(c, style="padding:.25rem .5rem; text-align:left; border:1px solid #ddd;") for c in show_cols]
         )
 
         body_rows_unverified = []
         for _, r in df_alike_unverified.iterrows():
             pid = r.get("id")
+            product_json = json.dumps(r.to_dict())
+            
+            # Checkbox cell (prevent row click when toggled)
+            is_checked = any(p.get('id') == pid for p in (clicked_products.get() or []))
+            checkbox_td = ui.tags.td(
+                ui.tags.input(
+                    type="checkbox", 
+                    id=f"alike_select_unverified_{pid}", 
+                    checked="checked" if is_checked else None,
+                    onclick=f"event.stopPropagation(); Shiny.setInputValue('toggle_checked_product', {{'product': {product_json}, 'checked': event.target.checked}}, {{priority: 'event'}})"
+                ),
+                style="padding:.25rem .5rem; vertical-align:top; border:1px solid #ddd; text-align:center;"
+            )
+
             cells = [
             ui.tags.td(str(r.get(c, "")), style="padding:.25rem .5rem; vertical-align:top; border:1px solid #ddd;")
             for c in show_cols
@@ -525,6 +582,7 @@ def server(input, output, session):
             onclick = f"Shiny.setInputValue('modify_product_row', {repr(pid)}, {{priority: 'event'}});"
             body_rows_unverified.append(
             ui.tags.tr(
+                checkbox_td,
                 *cells,
                 onclick=onclick,
                 class_="incompleted_table_rows",
@@ -546,6 +604,18 @@ def server(input, output, session):
             table_unverified,
             style="width: 100%;"
         )
+        
+    @reactive.effect
+    @reactive.event(input.toggle_checked_product)
+    def _on_toggle_checked_product():
+        data = input.toggle_checked_product()
+        product_dict = data['product']
+        is_checked = data['checked']
+        if is_checked:
+            clicked_products.append(product_dict)
+        else:
+            clicked_products.remove(product_dict.get('id'))
+
 
     # @reactive.effect
     # @reactive.event(input.save_product)
