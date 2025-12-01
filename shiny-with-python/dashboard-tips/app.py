@@ -5,7 +5,7 @@ import plotly.express as px
 import requests
 import re
 import json
-from services import get_incompleted_products, get_product_info, get_all_products, get_alike_products, link_product, get_incomplete_products_with_alike_products
+from services import get_incompleted_products, get_product_info, get_all_products, get_alike_products, link_product, get_incomplete_products_with_alike_products, update_product_info
 
 
 # Load data and compute static values
@@ -365,7 +365,7 @@ def server(input, output, session):
         if df.iloc[0]['active'] == 1:
             save_changes_button = ui.tags.div()
         else:
-            save_changes_button = ui.input_action_button('save_changes', "Save changes",
+            save_changes_button = ui.input_action_button('save_product', "Save changes",
                                                          style='width: 15rem')
 
         return ui.tags.div(
@@ -1043,18 +1043,42 @@ def server(input, output, session):
         df = product_to_modify.get()
         if df is None or df.empty:
             return
+        
+        product_id = int(df.iloc[0]['id'])
         cols = list(df.columns)
-        new_vals = {}
+        data_to_update = {}
+        
         for col in cols:
+            # Skip read-only columns
+            if col in ["id", "link_to", "cluster_id", "cluster_count", "app_ver", "created", "updated", "token"]:
+                continue
+                
             input_id = f"edit_{_sanitize_id(col)}"
             try:
-                val = input[input_id]()  # type: ignore[index]
+                val = input[input_id]()
+                if val == "" or val == "nan":
+                    val = None
+                data_to_update[col] = val
             except Exception:
-                val = None
-            new_vals[col] = val
-        updated = pd.DataFrame([new_vals])
-        product_to_modify.set(updated)
-        # Optionally close modal after save
-        ui.modal_remove()
+                pass
+        
+        print(f"Saving product {product_id} with data: {data_to_update}") # Debug print
+
+        if not data_to_update:
+            ui.notification_show("No changes to save.", type="warning")
+            return
+
+        # Call service
+        result = update_product_info(product_id, data_to_update)
+        
+        if "error" in result:
+            ui.notification_show(f"Error saving: {result['error']}", type="error")
+        else:
+            ui.notification_show("Product saved successfully!", type="message")
+            get_updated_product(product_id)
+            response = get_incomplete_products_with_alike_products()
+            products = pd.json_normalize(response)
+            incomplete_products_with_alike_products.set(products)
+            
 
 app = App(app_ui, server)

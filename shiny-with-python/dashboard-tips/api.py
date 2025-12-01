@@ -58,6 +58,48 @@ def get_product_by_id(product_id):
     
     return jsonify(result)
 
+@app.route("/products/<int:product_id>", methods=["PUT"])
+def update_product(product_id):
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "No data provided"}), 400
+
+    # Build SET clause
+    set_clauses = []
+    values = []
+    for key, value in data.items():
+        if key == 'id': continue # Don't update ID
+        set_clauses.append(f"{key} = %s")
+        values.append(value)
+    
+    if not set_clauses:
+        return jsonify({"error": "No fields to update"}), 400
+        
+    values.append(product_id)
+    
+    query = f"UPDATE product SET {', '.join(set_clauses)} WHERE id = %s RETURNING id;"
+    
+    conn = None
+    cur = None
+    try:
+        conn = connect_to_database()
+        cur = conn.cursor()
+        cur.execute(query, tuple(values))
+        updated_row = cur.fetchone()
+        conn.commit()
+        
+        if updated_row:
+            return jsonify({"success": True, "id": updated_row[0]}), 200
+        else:
+            return jsonify({"error": "Product not found"}), 404
+            
+    except Exception as e:
+        if conn: conn.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if cur: cur.close()
+        if conn: conn.close()
+
 # Get all incompleted products
 @app.route("/products/incompleted", methods=["GET"])
 def get_all_incompleted_products():
