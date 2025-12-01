@@ -97,6 +97,42 @@ def get_alike_products(product_id, cluster_id):
     
     return jsonify(results)
 
+@app.route("/products/link/<int:source_product_id>/<int:destination_product_id>", methods=["PUT"])
+def link_product(source_product_id, destination_product_id):
+    conn = None
+    cur = None
+    try:
+        conn = connect_to_database()
+        if conn is None:
+            raise RuntimeError("Failed to establish database connection")
+        cur = conn.cursor()
+        # return the updated row id so we can detect if update affected a row
+        cur.execute('UPDATE product SET link_to = %s WHERE id = %s RETURNING id;', (destination_product_id, source_product_id,))
+        updated = cur.fetchone()
+        conn.commit()
+        if not updated:
+            return jsonify({"error": f"Product {source_product_id} not found or not updated"}), 404
+        return jsonify({"success": True, "updated_id": updated[0]}), 200
+    except Exception as e:
+        # attempt rollback if possible
+        try:
+            if conn:
+                conn.rollback()
+        except Exception:
+            pass
+        return jsonify({"error": str(e)}), 500
+    finally:
+        try:
+            if cur:
+                cur.close()
+        except Exception:
+            pass
+        try:
+            if conn:
+                conn.close()
+        except Exception:
+            pass
+
 
 if __name__ == "__main__":
     app.run(debug=True)

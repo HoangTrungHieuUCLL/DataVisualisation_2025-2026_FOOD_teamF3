@@ -55,6 +55,7 @@ def server(input, output, session):
     product_to_modify = reactive.Value(pd.DataFrame())
     incomplete_products_with_alike_products = reactive.Value(pd.DataFrame())
     incomplete_products_without_alike_products = reactive.Value(pd.DataFrame())
+    target_link_id = reactive.Value(None)
     class _ClickedProducts:
         def __init__(self):
             self._rv = reactive.Value([])  # This will be a list of product dicts
@@ -65,17 +66,20 @@ def server(input, output, session):
         def set(self, v):
             self._rv.set(v)
 
-        def append(self, product_dict):
+        def append(self, pid):
+            # Accept only a pid and store it if not already present
+            if pid is None:
+                return
             cur = list(self._rv.get() or [])
-            # Avoid duplicates by checking for pid
-            if not any(p.get('id') == product_dict.get('id') for p in cur):
-                cur.append(product_dict)
-                self._rv.set(cur)
+            
+            if pid not in cur:
+                cur.append(pid)
+            self._rv.set(cur)
             
         def remove(self, pid):
+            # Remove the pid from the stored list of pids
             cur = list(self._rv.get() or [])
-            # Remove the dictionary with the matching pid
-            cur = [p for p in cur if p.get('id') != pid]
+            cur = [p for p in cur if p != pid]
             self._rv.set(cur)
             
         def remove_all(self):
@@ -319,8 +323,10 @@ def server(input, output, session):
         primary_fields = [
             "id",
             "name",
+            "link_to",
             "name_search",
             "active",
+            "unit",
             "synonyms",
             "brands",
             "brands_search",
@@ -375,7 +381,8 @@ def server(input, output, session):
             val = row[col_name] if col_name in row.index else None
             display_val = "" if (val is None or (isinstance(val, float) and pd.isna(val)) or (isinstance(val, str) and val == "nan")) else str(val)
             # If product is active (==1) make field unchangeable (read-only)
-            is_readonly = ("active" in row.index and row.get("active") == 1)
+            # Also make 'id' and 'link_to' read-only
+            is_readonly = ("active" in row.index and row.get("active") == 1) or (col_name in ["id", "link_to", "cluster_id", "cluster_count", "app_ver", "created", "updated", "token"])
             if is_readonly:
                 return ui.tags.div(
                     ui.tags.label(col_name, **{"for": input_id}, style="font-weight:600; margin-bottom:.25rem;"),
@@ -387,6 +394,12 @@ def server(input, output, session):
                     style="display:flex; flex-direction:column; width:100%; max-width:320px;"
                 )
             else:
+                if col_name == "active":
+                    return ui.tags.div(
+                        ui.tags.label(col_name, **{"for": input_id}, style="font-weight:600; margin-bottom:.25rem;"),
+                        ui.input_select(input_id, None, choices={"0": "0", "1": "1"}, selected=display_val),
+                        style="display:flex; flex-direction:column; width:100%; max-width:320px;"
+                    )
                 return ui.tags.div(
                     ui.tags.label(col_name, **{"for": input_id}, style="font-weight:600; margin-bottom:.25rem;"),
                     ui.input_text(input_id, None, value=display_val),
@@ -439,8 +452,15 @@ def server(input, output, session):
     @reactive.event(input.modify_product_row)
     def _on_modify_product_row():
         pid = input.modify_product_row()
+        
         response_product = get_product_info(pid)
         df = pd.json_normalize(response_product)
+        
+        if df.iloc[0]['active'] == 0:
+            clicked_products.append(pid)
+        else:
+            clicked_products.remove_all()
+            
         product_to_modify.set(df)
         
         # Safely extract product name from the DataFrame (use first row if present)
@@ -457,10 +477,17 @@ def server(input, output, session):
         close_edit_form_button = ui.input_action_button('close_edit_form', 'X',
                                                         style='border: 1px solid #ddd; height: 30px; width: 30px; text-align: center; padding: 0')
         
+        is_active = df.iloc[0]['active'] == 1
+        status_text = "Verified" if is_active else "Unverified"
+        status_color = "green" if is_active else "red"
+
         ui.modal_show(
             ui.modal(
                 ui.tags.div(
-                    ui.tags.h4(f"Product ID {pid} | {product_name}"),
+                    ui.tags.div(
+                        ui.tags.h4(f"Product ID {pid} | {product_name}"),
+                        ui.tags.h5(status_text, style=f"color: {status_color}; margin-top: 0;")
+                    ),
                     close_edit_form_button,
                     style='display: flex; flex-direction: row; justify-content: space-between'
                 ),
@@ -468,6 +495,7 @@ def server(input, output, session):
                 ui.output_ui("show_alike_products"),
                 ui.tags.hr(),
                 ui.output_ui("product_edit_form"),
+                ui.output_ui("link_confirmation_dialog"),
                 # This is to remove the default "Dismiss" button
                 footer=ui.tags.div(),
                 size="xl"
@@ -489,6 +517,7 @@ def server(input, output, session):
         
         product_id = df_selected.iloc[0]['id']
         cluster_id = df_selected.iloc[0]['cluster_id']
+        current_product_active = df_selected.iloc[0]['active']
         
         df_alike_products = get_alike_products(product_id, cluster_id)
         
@@ -512,7 +541,7 @@ def server(input, output, session):
         df_alike_unverified = df_alike[df_alike['active'] == 0]
         
         # Choose sensible columns to display if present
-        show_cols = [c for c in ['id', 'name', 'energy', 'protein', 'categories','barcode'] if c in df_alike.columns]
+        show_cols = [c for c in ['id', 'name', 'energy', 'protein', 'categories'] if c in df_alike.columns]
 
         header_verified = ui.tags.tr(
             ui.tags.th("", style="padding:.25rem .5rem; text-align:center; border:1px solid #ddd; width:2rem;"),
@@ -526,27 +555,28 @@ def server(input, output, session):
         body_rows_verified = []
         for _, r in df_alike_verified.iterrows():
             pid = r.get("id")
-            product_json = json.dumps(r.to_dict())
+            
             # Checkbox cell (prevent row click when toggled)
-            is_checked = any(p.get('id') == pid for p in clicked_list)
+            is_checked = any(p == pid for p in clicked_list)
             checkbox_td = ui.tags.td(
-                ui.tags.input(
-                    type="checkbox",
-                    id=f"alike_select_verified_{pid}",
-                    checked="checked" if is_checked else None,
-                    onclick=f"event.stopPropagation(); Shiny.setInputValue('toggle_checked_product', {{'product': {product_json}, 'checked': event.target.checked}}, {{priority: 'event'}})"
-                ),
+                # ui.tags.input(
+                #     type="checkbox",
+                #     id=f"alike_select_verified_{pid}",
+                #     checked="checked" if is_checked else None,
+                #     onclick=f"event.stopPropagation(); Shiny.setInputValue('toggle_checked_product', {{'pid': {repr(pid)}, 'checked': event.target.checked}}, {{priority: 'event'}})"
+                # ),
                 style="padding:.25rem .5rem; vertical-align:top; border:1px solid #ddd; text-align:center;"
             )
-
-            link_btn = ui.tags.div()
-            if has_clicked_items and not is_checked:
+            
+            if current_product_active == 0:
                 link_btn = ui.tags.button(
                     "Link",
                     type="button",
                     onclick=f"event.stopPropagation(); Shiny.setInputValue('link_product', {repr(pid)}, {{priority: 'event'}})",
                     style="padding: 2px 6px; font-size: 0.75rem; cursor: pointer;"
                 )
+            else:
+                link_btn = ui.tags.div()
             
             action_td = ui.tags.td(
                 link_btn,
@@ -584,28 +614,34 @@ def server(input, output, session):
         body_rows_unverified = []
         for _, r in df_alike_unverified.iterrows():
             pid = r.get("id")
-            product_json = json.dumps(r.to_dict())
             
             # Checkbox cell (prevent row click when toggled)
-            is_checked = any(p.get('id') == pid for p in clicked_list)
-            checkbox_td = ui.tags.td(
-                ui.tags.input(
+            is_checked = any(p == pid for p in clicked_list)
+            
+            if current_product_active == 0:
+                checkbox_input = ui.tags.input(
                     type="checkbox", 
                     id=f"alike_select_unverified_{pid}", 
                     checked="checked" if is_checked else None,
-                    onclick=f"event.stopPropagation(); Shiny.setInputValue('toggle_checked_product', {{'product': {product_json}, 'checked': event.target.checked}}, {{priority: 'event'}})"
-                ),
+                    onclick=f"event.stopPropagation(); Shiny.setInputValue('toggle_checked_product', {{'pid': {repr(pid)}, 'checked': event.target.checked}}, {{priority: 'event'}})"
+                )
+            else:
+                checkbox_input = ""
+
+            checkbox_td = ui.tags.td(
+                checkbox_input,
                 style="padding:.25rem .5rem; vertical-align:top; border:1px solid #ddd; text-align:center;"
             )
 
-            link_btn = ui.tags.div()
-            if has_clicked_items and not is_checked:
+            if current_product_active == 0 and not is_checked:
                 link_btn = ui.tags.button(
                     "Link",
                     type="button",
                     onclick=f"event.stopPropagation(); Shiny.setInputValue('link_product', {repr(pid)}, {{priority: 'event'}})",
                     style="padding: 2px 6px; font-size: 0.75rem; cursor: pointer;"
                 )
+            else:
+                link_btn = ui.tags.div()
             
             action_td = ui.tags.td(
                 link_btn,
@@ -647,12 +683,58 @@ def server(input, output, session):
     @reactive.event(input.toggle_checked_product)
     def _on_toggle_checked_product():
         data = input.toggle_checked_product()
-        product_dict = data['product']
+        pid = data['pid']
         is_checked = data['checked']
         if is_checked:
-            clicked_products.append(product_dict)
+            clicked_products.append(pid)
         else:
-            clicked_products.remove(product_dict.get('id'))
+            clicked_products.remove(pid)
+            
+    @render.ui
+    def link_confirmation_dialog():
+        pid = target_link_id.get()
+        if pid is None:
+            return ui.tags.div()
+        
+        clicked_list = clicked_products.get() or []
+        message = f"{', '.join(map(str, clicked_list))} ➡️➡️➡️ {pid}?"
+        
+        return ui.tags.div(
+            ui.tags.div(
+                ui.tags.h5("Link these products?"),
+                ui.tags.p(message),
+                ui.tags.div(
+                    ui.input_action_button("confirm_link", "Confirm", class_="btn btn-primary"),
+                    ui.input_action_button("cancel_link", "Cancel", class_="btn btn-secondary"),
+                    style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px;"
+                ),
+                style="background: white; padding: 20px; border-radius: 5px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); width: 400px; max-width: 90%;"
+            ),
+            style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; z-index: 10000;"
+        )
+
+    @reactive.effect
+    @reactive.event(input.link_product)
+    def _on_link_product():
+        pid = input.link_product()
+        target_link_id.set(pid)
+
+    @reactive.effect
+    @reactive.event(input.confirm_link)
+    def _on_confirm_link():
+        link_to_product_id = target_link_id.get()
+        if link_to_product_id is not None:
+            for pid in clicked_products.get():
+                response = requests.put(f"http://localhost:5000/products/link/{pid}/{link_to_product_id}")
+                print(response.json())
+        target_link_id.set(None)
+        
+
+    @reactive.effect
+    @reactive.event(input.cancel_link)
+    def _on_cancel_link():
+        target_link_id.set(None)
+
 
 
     # @reactive.effect
