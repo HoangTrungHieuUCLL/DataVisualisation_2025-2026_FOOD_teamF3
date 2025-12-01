@@ -18,3 +18,28 @@
 .incompleted_table_rows:hover {
   outline: 2px solid #d0d7de;
 }
+
+.panel-box {
+  display:flex;
+  flex-direction:column;
+  gap:.5rem;
+  border:1px solid #ddd;
+  padding:1rem;
+  border-radius:.5rem;
+  box-sizing:border-box;
+  box-shadow:0 4px 12px rgba(0,0,0,0.08);
+  background:#fff;
+}
+
+.reset_all_button {
+  width: 100%;
+  text-align: center;
+  border: red 1px solid;
+  color: red;
+}
+
+.reset_all_button:hover {
+  background-color: red;
+  color: white;
+  border: red 1px solid;
+}
