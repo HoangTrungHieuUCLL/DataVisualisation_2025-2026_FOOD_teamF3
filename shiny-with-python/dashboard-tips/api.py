@@ -132,6 +132,22 @@ def link_product(source_product_id, destination_product_id):
                 conn.close()
         except Exception:
             pass
+        
+@app.route("/products/incomplete/alike", methods=["GET"])
+def get_incomplete_products_with_alike_products():
+    conn = connect_to_database()
+    cur = conn.cursor()
+    cur.execute('SELECT * FROM product WHERE active = 0 AND cluster_count != 1;')
+    rows = cur.fetchall()
+    
+    # map rows to list[dict] using column names so jsonify can serialize it
+    columns = [desc[0] for desc in cur.description] if cur.description else []
+    results = [dict(zip(columns, row)) for row in rows] if rows else []
+    
+    cur.close()
+    conn.close()
+    
+    return jsonify(results)
 
 
 if __name__ == "__main__":

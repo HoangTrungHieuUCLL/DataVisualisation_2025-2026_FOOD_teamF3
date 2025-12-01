@@ -37,6 +37,15 @@ def get_alike_products(product_id, cluster_id):
         return products.json()
     except Exception as e:
         return {"error": str(e)}
+
+def get_incomplete_products_with_alike_products():
+    API_URL = "http://127.0.0.1:5000/products/incomplete/alike"
+    
+    try:
+        products = requests.get(API_URL)
+        return products.json()
+    except Exception as e:
+        return {"error": str(e)}
     
 def link_product(source_product_id, destination_product_id):
     API_URL = "http://127.0.0.1:5000/products/link/" + str(source_product_id) + "/" + str(destination_product_id)
