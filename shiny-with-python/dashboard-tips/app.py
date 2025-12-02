@@ -1,12 +1,11 @@
 import ast
 import string
-import faicons as fa
 import plotly.express as px
 import requests
 import re
 import json
 from services import get_incompleted_products, get_product_info, get_all_products, get_alike_products, link_product, get_incomplete_products_with_alike_products, update_product_info
-
+from tool_functions import _sanitize_id, render_field, render_table, render_alike_products_table
 
 # Load data and compute static values
 from shared import app_dir
@@ -14,13 +13,7 @@ from shinywidgets import output_widget, render_plotly
 
 from shiny import App, reactive, render, ui
 import pandas as pd
-
-ICONS = {
-    "user": fa.icon_svg("user", "regular"),
-    "wallet": fa.icon_svg("wallet"),
-    "currency-dollar": fa.icon_svg("dollar-sign"),
-    "ellipsis": fa.icon_svg("ellipsis"),
-}
+from components import _ClickedProducts
 
 # Add page title and sidebar
 app_ui = ui.page_sidebar(
@@ -59,36 +52,6 @@ def server(input, output, session):
     target_link_id = reactive.Value(None)
     products_to_compare = reactive.Value(pd.DataFrame())
     chart_type = reactive.Value("bar")
-    
-    class _ClickedProducts:
-        def __init__(self):
-            self._rv = reactive.Value([])  # This will be a list of product dicts
-
-        def get(self):
-            return self._rv.get()
-
-        def set(self, v):
-            self._rv.set(v)
-
-        def append(self, pid):
-            # Accept only a pid and store it if not already present
-            if pid is None:
-                return
-            cur = list(self._rv.get() or [])
-            
-            if pid not in cur:
-                cur.append(pid)
-            self._rv.set(cur)
-            
-        def remove(self, pid):
-            # Remove the pid from the stored list of pids
-            cur = list(self._rv.get() or [])
-            cur = [p for p in cur if p != pid]
-            self._rv.set(cur)
-            
-        def remove_all(self):
-            self._rv.set([])
-
     clicked_products = _ClickedProducts()
     # current_tab = reactive.Value("Incomplete products with alike products")
     
@@ -207,44 +170,6 @@ def server(input, output, session):
             return ""
         return "Click on the product to check and modify its information."
     
-    # Render table
-    def render_table(df: pd.DataFrame, title: str):
-        if df is None or df.empty:
-            return ui.tags.div(ui.tags.h5(title), ui.tags.p("No products.", style="color:#666;"))
-
-        # Decide columns to show (use sensible defaults if present)
-        base_cols = [c for c in ['id', 'name', 'energy', 'unit', 'synonyms', 'brands', 'categories', 'link_to'] if c in df.columns]
-
-        header = ui.tags.tr(
-            *[ui.tags.th(col, style="padding:.25rem .5rem; text-align:left; border:1px solid #ddd;") for col in base_cols]
-        )
-        body_rows = []
-        for _, row in df.iterrows():
-            pid = row.get("id")
-            cells = [ui.tags.td(str(row.get(
-                col, "")), style="padding:.25rem .5rem; vertical-align:top; border: 1px solid #ddd;") for col in base_cols]
-            onclick = f"Shiny.setInputValue('modify_product_row', {repr(pid)}, {{priority: 'event'}});"
-            body_rows.append(
-                ui.tags.tr(
-                    *cells,
-                    onclick=onclick,
-                    class_="incompleted_table_rows",
-                    style="cursor:pointer;"
-                )
-            )
-
-        table = ui.tags.table(
-            ui.tags.thead(header),
-            ui.tags.tbody(*body_rows),
-            style="font-size:.85rem; border:1px solid #ddd;"
-        )
-        
-        return ui.tags.div(
-            ui.tags.h5(f"{title}"),
-            table,
-            style="margin-bottom:1rem;"
-        )
-    
     @render.ui
     def incomplete_products_with_alike_products_listing():
         if not is_admin():
@@ -309,10 +234,6 @@ def server(input, output, session):
         session.send_input_message("keywords", {"value": ""})
         session.send_input_message("sort_column", {"value": "-"})
         session.send_input_message("sort_direction", {"value": "-"})
-        
-    def _sanitize_id(name: str) -> str:
-        # Keep alphanumerics and underscore; replace others with underscore
-        return re.sub(r"[^0-9A-Za-z_]+", "_", name)
 
     @render.ui
     def product_edit_form():
@@ -320,47 +241,14 @@ def server(input, output, session):
         if df is None or df.empty:
             return ui.tags.div("This product does not exist.", style="color:#666;")
 
-        # Use the first row as the current product
-        row = df.iloc[0]
-
         # Segment fields into 3 groups
         primary_fields = ["id", "name", "link_to", "name_search", "active", "unit", "synonyms", "brands", "brands_search", "categories", "barcode", "bron"]
         nutrition_fields = ["energy", "protein", "fat", "saturated_fatty_acid", "carbohydrates", "sugar", "starch", "dietary_fiber", "salt", "sodium", "k", "ca", "p", "fe", "polyols", "cholesterol", "omega3", "omega6", "mov", "eov", "vit_a", "vit_b12", "vit_b6", "vit_b1", "vit_b2", "vit_c", "vit_d", "mg", "water", "remarks_carbohydrates", "glucose", "fructose", "excess_fructose", "lactose", "sorbitol", "mannitol", "fructans", "gos"]
         other_fields = [c for c in df.columns if c not in primary_fields + nutrition_fields]
 
-        def render_field(col_name: str):
-            input_id = f"edit_{_sanitize_id(col_name)}"
-            val = row[col_name] if col_name in row.index else None
-            display_val = "" if (val is None or (isinstance(val, float) and pd.isna(val)) or (isinstance(val, str) and val == "nan")) else str(val)
-            # If product is active (==1) make field unchangeable (read-only)
-            # Also make 'id' and 'link_to' read-only
-            is_readonly = ("active" in row.index and row.get("active") == 1) or (col_name in ["id", "link_to", "cluster_id", "cluster_count", "app_ver", "created", "updated", "token"])
-            if is_readonly:
-                return ui.tags.div(
-                    ui.tags.label(col_name, **{"for": input_id}, style="font-weight:600; margin-bottom:.25rem;"),
-                    ui.tags.div(
-                        display_val or "",
-                        id=input_id,
-                        style="padding:.4rem .55rem; background:#f5f5f5; border:1px solid #ddd; border-radius:.35rem; font-size:.85rem; min-height:2rem; display:flex; align-items:center;"
-                    ),
-                    style="display:flex; flex-direction:column; width:100%; max-width:320px;"
-                )
-            else:
-                if col_name == "active":
-                    return ui.tags.div(
-                        ui.tags.label(col_name, **{"for": input_id}, style="font-weight:600; margin-bottom:.25rem;"),
-                        ui.input_select(input_id, None, choices={"0": "0", "1": "1"}, selected=display_val),
-                        style="display:flex; flex-direction:column; width:100%; max-width:320px;"
-                    )
-                return ui.tags.div(
-                    ui.tags.label(col_name, **{"for": input_id}, style="font-weight:600; margin-bottom:.25rem;"),
-                    ui.input_text(input_id, None, value=display_val),
-                    style="display:flex; flex-direction:column; width:100%; max-width:320px;"
-                )
-
-        primary_rows = [render_field(c) for c in primary_fields]
-        nutrition_rows = [render_field(c) for c in nutrition_fields]
-        other_rows = [render_field(c) for c in other_fields]
+        primary_rows = [render_field(df, c) for c in primary_fields]
+        nutrition_rows = [render_field(df, c) for c in nutrition_fields]
+        other_rows = [render_field(df, c) for c in other_fields]
         
         if df.iloc[0]['active'] == 1:
             save_changes_button = ui.tags.div()
@@ -478,223 +366,30 @@ def server(input, output, session):
         
         df_alike_products = get_alike_products(product_id, cluster_id)
         
-        # Handle possible error response
         if isinstance(df_alike_products, dict) and "error" in df_alike_products:
             return ui.tags.div(ui.tags.small("This product has no alike products"), class_="panel-box")
 
-        # Normalize into DataFrame
         try:
             df_alike = pd.json_normalize(df_alike_products)
         except Exception:
-            try:
-                df_alike = pd.DataFrame(df_alike_products)
-            except Exception:
-                df_alike = pd.DataFrame()
+            df_alike = pd.DataFrame(df_alike_products)
                 
         alike_products.set(df_alike)
-
-        # Use the reactive alike_products instead of the local df_alike variable
         df_alike = alike_products.get()
 
-        if df_alike is None:
+        if df_alike is None or df_alike.empty:
             return ui.tags.div(ui.tags.small("No alike products found."), class_="panel-box")
-
-        # Ensure we have a DataFrame
-        try:
-            if df_alike.empty:
-                return ui.tags.div(ui.tags.small("No alike products found."), class_="panel-box")
-        except Exception:
-            try:
-                df_alike = pd.json_normalize(df_alike)
-                if df_alike.empty:
-                    return ui.tags.div(ui.tags.small("No alike products found."), class_="panel-box")
-            except Exception:
-                return ui.tags.div(ui.tags.small("No alike products found."), class_="panel-box")
         
-        # Split verified / unverified safely
+        df_alike_verified = pd.DataFrame()
+        df_alike_unverified = pd.DataFrame()
         if "active" in df_alike.columns:
             df_alike_verified = df_alike[df_alike["active"] == 1]
             df_alike_unverified = df_alike[(df_alike["active"] == 0) & (df_alike["link_to"].isnull())]
         
-        # Choose sensible columns to display if present
-        show_cols = [c for c in ['id', 'name', 'energy', 'protein', 'categories'] if c in df_alike.columns]
-
         clicked_list = clicked_products.get() or []
-        has_clicked_items = len(clicked_list) > 0
         
-        # Count checked verified products
-        verified_ids = df_alike_verified['id'].tolist() if not df_alike_verified.empty else []
-        checked_verified_count = sum(1 for pid in clicked_list if pid in verified_ids)
-        
-        # Verified Header Checkbox
-        all_verified_checked = bool(verified_ids) and all(pid in clicked_list for pid in verified_ids)
-        verified_checkbox_header = ui.tags.input(
-            type="checkbox",
-            checked="checked" if all_verified_checked else None,
-            onclick=f"event.stopPropagation(); Shiny.setInputValue('toggle_all_products', {{'ids': {repr(verified_ids)}, 'checked': event.target.checked}}, {{priority: 'event'}})"
-        )
-
-        header_verified = ui.tags.tr(
-            ui.tags.th(verified_checkbox_header, style="padding:.25rem .5rem; text-align:center; border:1px solid #ddd; width:2rem;"),
-            *[ui.tags.th(c, style="padding:.25rem .5rem; text-align:left; border:1px solid #ddd;") for c in show_cols],
-            ui.tags.th("Action", style="padding:.25rem .5rem; text-align:left; border:1px solid #ddd;")
-        )
-
-        body_rows_verified = []
-        for _, r in df_alike_verified.iterrows():
-            pid = r.get("id")
-            
-            # Checkbox cell (prevent row click when toggled)
-            is_checked = any(p == pid for p in clicked_list)
-            checkbox_td = ui.tags.td(
-                ui.tags.input(
-                    type="checkbox",
-                    id=f"alike_select_verified_{pid}",
-                    checked="checked" if is_checked else None,
-                    onclick=f"event.stopPropagation(); Shiny.setInputValue('toggle_checked_product', {{'pid': {repr(pid)}, 'checked': event.target.checked}}, {{priority: 'event'}})"
-                ),
-                style="padding:.25rem .5rem; vertical-align:top; border:1px solid #ddd; text-align:center;"
-            )
-            
-
-            if current_product_active == 0 and not is_checked:
-                if checked_verified_count <= 1:
-                    link_btn = ui.tags.button(
-                        "Link",
-                        type="button",
-                        onclick=f"event.stopPropagation(); Shiny.setInputValue('link_product', {repr(pid)}, {{priority: 'event'}})",
-                        style="padding: 2px 6px; font-size: 0.75rem; cursor: pointer;"
-                    )
-                else:
-                    link_btn = ui.tags.div()
-
-                compare_btn = ui.tags.button(
-                    "Compare",
-                    type="button",
-                    onclick=f"event.stopPropagation(); Shiny.setInputValue('compare_products', {repr(pid)}, {{priority: 'event'}})",
-                    style="padding: 2px 6px; font-size: 0.75rem; cursor: pointer;"
-                )
-
-            else:
-                link_btn = ui.tags.div()
-                compare_btn = ui.tags.div()
-            
-            
-            action_td = ui.tags.td(
-                link_btn,
-                compare_btn,
-                style="padding:.25rem .5rem; vertical-align:top; border:1px solid #ddd;"
-            )
-
-            cells = [
-            ui.tags.td(str(r.get(c, "")), style="padding:.25rem .5rem; vertical-align:top; border:1px solid #ddd;")
-            for c in show_cols
-            ]
-            onclick = f"Shiny.setInputValue('modify_product_row', {repr(pid)}, {{priority: 'event'}});"
-            body_rows_verified.append(
-            ui.tags.tr(
-                checkbox_td,
-                *cells,
-                action_td,
-                onclick=onclick,
-                class_="incompleted_table_rows",
-                style="cursor:pointer; height: 20px;"
-            )
-            )
-
-        table_verified = ui.tags.table(
-            ui.tags.thead(header_verified),
-            ui.tags.tbody(*body_rows_verified),
-            style="width:100%; border-collapse:collapse; font-size:.75rem; border:1px solid #ddd;"
-        )
-        
-        # Unverified Header Checkbox
-        unverified_ids = df_alike_unverified['id'].tolist() if not df_alike_unverified.empty else []
-        all_unverified_checked = bool(unverified_ids) and all(pid in clicked_list for pid in unverified_ids)
-        
-        if current_product_active == 0:
-            unverified_checkbox_header = ui.tags.input(
-                type="checkbox",
-                checked="checked" if all_unverified_checked else None,
-                onclick=f"event.stopPropagation(); Shiny.setInputValue('toggle_all_products', {{'ids': {repr(unverified_ids)}, 'checked': event.target.checked}}, {{priority: 'event'}})"
-            )
-        else:
-            unverified_checkbox_header = ""
-
-        header_unverified = ui.tags.tr(
-            ui.tags.th(unverified_checkbox_header, style="padding:.25rem .5rem; text-align:center; border:1px solid #ddd; width:2rem;"),
-            *[ui.tags.th(c, style="padding:.25rem .5rem; text-align:left; border:1px solid #ddd;") for c in show_cols],
-            ui.tags.th("Action", style="padding:.25rem .5rem; text-align:left; border:1px solid #ddd;")
-        )
-
-        body_rows_unverified = []
-        for _, r in df_alike_unverified.iterrows():
-            pid = r.get("id")
-            
-            # Checkbox cell (prevent row click when toggled)
-            is_checked = any(p == pid for p in clicked_list)
-            
-            if current_product_active == 0:
-                checkbox_input = ui.tags.input(
-                    type="checkbox", 
-                    id=f"alike_select_unverified_{pid}", 
-                    checked="checked" if is_checked else None,
-                    onclick=f"event.stopPropagation(); Shiny.setInputValue('toggle_checked_product', {{'pid': {repr(pid)}, 'checked': event.target.checked}}, {{priority: 'event'}})"
-                )
-            else:
-                checkbox_input = ""
-
-            checkbox_td = ui.tags.td(
-                checkbox_input,
-                style="padding:.25rem .5rem; vertical-align:top; border:1px solid #ddd; text-align:center;"
-            )
-
-            if current_product_active == 0 and not is_checked:
-                link_btn = ui.tags.button(
-                    "Link",
-                    type="button",
-                    onclick=f"event.stopPropagation(); Shiny.setInputValue('link_product', {repr(pid)}, {{priority: 'event'}})",
-                    style="padding: 2px 6px; font-size: 0.75rem; cursor: pointer;"
-                )
-                compare_btn = ui.tags.button(
-                    "Compare",
-                    type="button",
-                    onclick=f"event.stopPropagation(); Shiny.setInputValue('compare_products', {repr(pid)}, {{priority: 'event'}})",
-                    style="padding: 2px 6px; font-size: 0.75rem; cursor: pointer;"
-                )
-
-            else:
-                link_btn = ui.tags.div()
-                compare_btn = ui.tags.div()
-            
-            
-            action_td = ui.tags.td(
-                link_btn,
-                compare_btn,
-                style="padding:.25rem .5rem; vertical-align:top; border:1px solid #ddd;"
-            )
-
-            cells = [
-            ui.tags.td(str(r.get(c, "")), style="padding:.25rem .5rem; vertical-align:top; border:1px solid #ddd;")
-            for c in show_cols
-            ]
-            onclick = f"Shiny.setInputValue('modify_product_row', {repr(pid)}, {{priority: 'event'}});"
-            body_rows_unverified.append(
-            ui.tags.tr(
-                checkbox_td,
-                *cells,
-                action_td,
-                onclick=onclick,
-                class_="incompleted_table_rows",
-                style="cursor:pointer; height: 20px;"
-            )
-            )
-
-        table_unverified = ui.tags.table(
-            ui.tags.thead(header_unverified),
-            ui.tags.tbody(*body_rows_unverified),
-            style="width:100%; border-collapse:collapse; font-size:.75rem; border:1px solid #ddd;"
-        )
+        table_verified = render_alike_products_table(df_alike_verified, "Verified", clicked_list, current_product_active, is_verified=True)
+        table_unverified = render_alike_products_table(df_alike_unverified, "Unverified", clicked_list, current_product_active, is_verified=False)
 
         compare_selected_btn = ui.tags.div()
         if len(clicked_list) > 1:
@@ -710,9 +405,7 @@ def server(input, output, session):
         return ui.tags.div(
             ui.tags.h5(f"Alike products"),
             compare_selected_btn,
-            ui.tags.p("Verified products:", style="margin-top:2rem;"),
             table_verified,
-            ui.tags.p("Unverified products:", style="margin-top:2rem;"),
             table_unverified,
             style="width: 100%;"
         )

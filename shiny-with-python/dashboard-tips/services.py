@@ -1,5 +1,7 @@
 import requests
 
+# Get all products
+
 def get_all_products():
     API_URL = "http://127.0.0.1:5000/products"
     
