@@ -22,7 +22,7 @@ def render_field(df: DataFrame, col_name: str):
             ui.tags.div(
                 display_val or "",
                 id=input_id,
-                style="padding:.4rem .55rem; background:#f5f5f5; border:1px solid #ddd; border-radius:.35rem; font-size:.85rem; min-height:2rem; display:flex; align-items:center;"
+                style="background:#f5f5f5; border:1px solid #ddd; display:flex; align-items:center; padding: 0.375rem 0.75rem; height: 36.5px; width: 300px; border-radius: 3px;"
             ),
             style="display:flex; flex-direction:column; width:100%; max-width:320px;"
         )
@@ -40,9 +40,9 @@ def render_field(df: DataFrame, col_name: str):
         )
 
 # Render the table to show in product_to_modify
-def render_table(df: pd.DataFrame, title: str):
+def render_table(df: pd.DataFrame):
     if df is None or df.empty:
-        return ui.tags.div(ui.tags.h5(title), ui.tags.p("No products.", style="color:#666;"))
+        return ui.tags.div(ui.tags.p("No products.", style="color:#666;"))
 
     # Decide columns to show (use sensible defaults if present)
     base_cols = [c for c in ['id', 'name', 'energy', 'unit', 'synonyms', 'brands', 'categories', 'link_to'] if c in df.columns]
@@ -54,7 +54,7 @@ def render_table(df: pd.DataFrame, title: str):
     for _, row in df.iterrows():
         pid = row.get("id")
         cells = [ui.tags.td(str(row.get(
-            col, "")), style="padding:.25rem .5rem; vertical-align:top; border: 1px solid #ddd;") for col in base_cols]
+            col, "")), style="padding:.25rem .5rem; vertical-align:center; border: 1px solid #ddd;") for col in base_cols]
         onclick = f"Shiny.setInputValue('modify_product_row', {repr(pid)}, {{priority: 'event'}});"
         body_rows.append(
             ui.tags.tr(
@@ -72,7 +72,6 @@ def render_table(df: pd.DataFrame, title: str):
     )
     
     return ui.tags.div(
-        ui.tags.h5(f"{title}"),
         table,
         style="margin-bottom:1rem;"
     )
@@ -93,13 +92,15 @@ def render_alike_products_table(df, title, clicked_products, current_product_act
         header_checkbox = ui.tags.input(
             type="checkbox",
             checked="checked" if all_products_checked else None,
-            onclick=f"event.stopPropagation(); Shiny.setInputValue('toggle_all_products', {{'ids': {repr(product_ids)}, 'checked': event.target.checked}}, {{priority: 'event'}})"
+            onclick=f"event.stopPropagation(); Shiny.setInputValue('toggle_all_products', {{'ids': {repr(product_ids)}, 'checked': event.target.checked}}, {{priority: 'event'}})",
+            class_="alike_product_checkbox"
         )
 
     header = ui.tags.tr(
         ui.tags.th(header_checkbox, style="padding:.25rem .5rem; text-align:center; border:1px solid #ddd; width:2rem;"),
-        *[ui.tags.th(c, style="padding:.25rem .5rem; text-align:left; border:1px solid #ddd;") for c in show_cols],
-        ui.tags.th("Action", style="padding:.25rem .5rem; text-align:left; border:1px solid #ddd;")
+        *[ui.tags.th(c, style="padding:.25rem .5rem; text-align:center; border:1px solid #ddd;") for c in show_cols],
+        ui.tags.th("action", style="padding:.25rem .5rem; text-align:center; border:1px solid #ddd; width: 10rem;"),
+        style="height: 32px; background-color: #a5b4fb;"
     )
 
     body_rows = []
@@ -114,12 +115,13 @@ def render_alike_products_table(df, title, clicked_products, current_product_act
                 type="checkbox",
                 id=f"alike_select_{'verified' if is_verified else 'unverified'}_{pid}",
                 checked="checked" if is_checked else None,
-                onclick=f"event.stopPropagation(); Shiny.setInputValue('toggle_checked_product', {{'pid': {repr(pid)}, 'checked': event.target.checked}}, {{priority: 'event'}})"
+                onclick=f"event.stopPropagation(); Shiny.setInputValue('toggle_checked_product', {{'pid': {repr(pid)}, 'checked': event.target.checked}}, {{priority: 'event'}})",
+                class_="alike_product_checkbox"
             )
         
         checkbox_td = ui.tags.td(
             row_checkbox,
-            style="padding:.25rem .5rem; vertical-align:top; border:1px solid #ddd; text-align:center;"
+            style="padding:.25rem .5rem; vertical-align:center; horizontal-align:center; border:1px solid #ddd;"
         )
 
         # Action Buttons
@@ -130,22 +132,25 @@ def render_alike_products_table(df, title, clicked_products, current_product_act
                     "Link",
                     type="button",
                     onclick=f"event.stopPropagation(); Shiny.setInputValue('link_product', {repr(pid)}, {{priority: 'event'}})",
-                    style="padding: 2px 6px; font-size: 0.75rem; cursor: pointer;"
+                    # style="padding: 2px 6px; font-size: 0.75rem; cursor: pointer;",
+                    class_="link_and_compare_button"
                 )
             compare_btn = ui.tags.button(
                 "Compare",
                 type="button",
                 onclick=f"event.stopPropagation(); Shiny.setInputValue('compare_products', {repr(pid)}, {{priority: 'event'}})",
-                style="padding: 2px 6px; font-size: 0.75rem; cursor: pointer;"
+                # style="padding: 2px 6px; font-size: 0.75rem; cursor: pointer;",
+                class_="link_and_compare_button"
             )
 
         action_td = ui.tags.td(
             link_btn,
             compare_btn,
-            style="padding:.25rem .5rem; vertical-align:top; border:1px solid #ddd;"
+            style="padding:.25rem .5rem; vertical-align:center; border:1px solid #ddd;",
+            class_="link_and_compare_button_container"
         )
 
-        cells = [ui.tags.td(str(r.get(c, "")), style="padding:.25rem .5rem; vertical-align:top; border:1px solid #ddd;") for c in show_cols]
+        cells = [ui.tags.td(str(r.get(c, "")), style="padding:.25rem .5rem; vertical-align: center; border:1px solid #ddd;") for c in show_cols]
         onclick = f"Shiny.setInputValue('modify_product_row', {repr(pid)}, {{priority: 'event'}});"
         
         body_rows.append(
@@ -155,7 +160,7 @@ def render_alike_products_table(df, title, clicked_products, current_product_act
                 action_td,
                 onclick=onclick,
                 class_="incompleted_table_rows",
-                style="cursor:pointer; height: 20px;"
+                style="cursor:pointer; height: 32px;"
             )
         )
 

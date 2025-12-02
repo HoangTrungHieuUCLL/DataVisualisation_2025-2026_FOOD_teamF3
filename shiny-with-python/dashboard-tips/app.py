@@ -6,11 +6,8 @@ import re
 import json
 from services import get_incompleted_products, get_product_info, get_all_products, get_alike_products, link_product, get_incomplete_products_with_alike_products, update_product_info
 from tool_functions import _sanitize_id, render_field, render_table, render_alike_products_table
-
-# Load data and compute static values
 from shared import app_dir
 from shinywidgets import output_widget, render_plotly
-
 from shiny import App, reactive, render, ui
 import pandas as pd
 from components import _ClickedProducts
@@ -73,7 +70,7 @@ def server(input, output, session):
     def login_card():
         if is_admin() == False:
             return ui.tags.div(
-                ui.tags.h4("Admin Login"),
+                ui.tags.h5("Admin Login", style="text-align: center"),
                 ui.input_text("username", "Username"),
                 ui.input_password("password", "Password"),
                 ui.input_action_button("login", "Login"),
@@ -189,11 +186,12 @@ def server(input, output, session):
         except Exception:
             pass
 
-        table_with = render_table(df_with, "There are similar products to these products:")
+        table_with = render_table(df_with)
 
         return ui.tags.div(
             table_with,
-            style="display:flex; flex-direction:column; gap:1rem; margin-top:1rem; margin-bottom:1rem;"
+            style="display:flex; flex-direction:column; gap:1rem; margin-top:1rem; margin-bottom:1rem;",
+            class_="incomplete_products_with_alike_products_listing"
         )
         
     @render.ui
@@ -215,11 +213,12 @@ def server(input, output, session):
         except Exception:
             pass
 
-        table_without = render_table(df_without, "These products are unique:")
+        table_without = render_table(df_without)
 
         return ui.tags.div(
             table_without,
-            style="display:flex; flex-direction:column; gap:1rem; margin-top:1rem; margin-bottom:1rem;"
+            style="display:flex; flex-direction:column; gap:1rem; margin-top:1rem; margin-bottom:1rem;",
+            class_="incomplete_products_without_alike_products_listing"
         )
         
     @reactive.effect
@@ -341,7 +340,6 @@ def server(input, output, session):
                 ui.output_ui("product_edit_form"),
                 ui.output_ui("link_confirmation_dialog"),
                 ui.output_ui("compare_dialog"),
-                # This is to remove the default "Dismiss" button
                 footer=ui.tags.div(),
                 size="xl"
             )
@@ -367,7 +365,7 @@ def server(input, output, session):
         df_alike_products = get_alike_products(product_id, cluster_id)
         
         if isinstance(df_alike_products, dict) and "error" in df_alike_products:
-            return ui.tags.div(ui.tags.small("This product has no alike products"), class_="panel-box")
+            return ui.tags.div(ui.tags.small("This product has no alike products"))
 
         try:
             df_alike = pd.json_normalize(df_alike_products)
@@ -378,7 +376,7 @@ def server(input, output, session):
         df_alike = alike_products.get()
 
         if df_alike is None or df_alike.empty:
-            return ui.tags.div(ui.tags.small("No alike products found."), class_="panel-box")
+            return ui.tags.div(ui.tags.small("No alike products found."))
         
         df_alike_verified = pd.DataFrame()
         df_alike_unverified = pd.DataFrame()
@@ -398,8 +396,21 @@ def server(input, output, session):
                 "Compare the selected products",
                 type="button",
                 onclick=f"event.stopPropagation(); Shiny.setInputValue('compare_products', {repr(first_pid)}, {{priority: 'event'}})",
-                class_="btn btn-primary",
-                style="margin-top: 10px; margin-bottom: 10px;"
+                class_="button"
+            )
+        else:
+            all_alike_ids = pd.concat([df_alike_verified['id'], df_alike_unverified['id']]).unique().tolist()
+            # Also include the main product if it's unverified
+            if current_product_active == 0:
+                main_product_id = df_selected.iloc[0]['id']
+                if main_product_id not in all_alike_ids:
+                    all_alike_ids.append(main_product_id)
+
+            compare_selected_btn = ui.tags.button(
+                "Compare all products",
+                type="button",
+                onclick=f"event.stopPropagation(); Shiny.setInputValue('compare_all_alike_products', {repr(all_alike_ids)}, {{priority: 'event'}})",
+                class_="button"
             )
 
         return ui.tags.div(
@@ -410,6 +421,33 @@ def server(input, output, session):
             style="width: 100%;"
         )
         
+    @reactive.effect
+    @reactive.event(input.compare_all_alike_products)
+    def _on_compare_all_alike_products():
+        all_alike_ids = input.compare_all_alike_products()
+        
+        # Add all products to clicked_products
+        current_clicked = list(clicked_products.get() or [])
+        for pid in all_alike_ids:
+            if pid not in current_clicked:
+                current_clicked.append(pid)
+        clicked_products.set(current_clicked)
+        
+        # Directly trigger the comparison logic
+        if current_clicked:
+            products_list = []
+            for pid in current_clicked:
+                p_info = get_product_info(pid)
+                if isinstance(p_info, dict) and "error" not in p_info:
+                    products_list.append(p_info)
+            
+            if products_list:
+                df_compare = pd.DataFrame(products_list)
+            else:
+                df_compare = pd.DataFrame()
+                
+            products_to_compare.set(df_compare)
+
     @reactive.effect
     @reactive.event(input.toggle_checked_product)
     def _on_toggle_checked_product():
