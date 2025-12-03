@@ -40,6 +40,20 @@ def get_all_products():
     
     return jsonify(results)
 
+@app.route("/products/count", methods=["GET"])
+def get_products_count():
+    conn = connect_to_database()
+    cur = conn.cursor()
+    try:
+        cur.execute('SELECT COUNT(*) FROM product;')
+        count = cur.fetchone()[0]
+        return jsonify({"count": count})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        cur.close()
+        conn.close()
+
 @app.route("/products/<int:product_id>", methods=["GET"])
 def get_product_by_id(product_id):
     conn = connect_to_database()

@@ -65,3 +65,11 @@ def link_product(source_product_id, destination_product_id):
         return result.json()
     except Exception as e:
         return {"error": str(e)}
+    
+def get_products_count():
+    API_URL = "http://127.0.0.1:5000/products/count"
+    try:
+        response = requests.get(API_URL)
+        return response.json().get("count", 0)
+    except Exception:
+        return 0

@@ -4,7 +4,7 @@ import plotly.express as px
 import requests
 import re
 import json
-from services import get_incompleted_products, get_product_info, get_all_products, get_alike_products, link_product, get_incomplete_products_with_alike_products, update_product_info
+from services import get_incompleted_products, get_product_info, get_all_products, get_alike_products, link_product, get_incomplete_products_with_alike_products, update_product_info, get_products_count
 from tool_functions import _sanitize_id, render_field, render_table, render_alike_products_table
 from shared import app_dir
 from shinywidgets import output_widget, render_plotly
@@ -50,6 +50,7 @@ def server(input, output, session):
     products_to_compare = reactive.Value(pd.DataFrame())
     chart_type = reactive.Value("bar")
     clicked_products = _ClickedProducts()
+    last_count = reactive.Value(None)
     # current_tab = reactive.Value("Incomplete products with alike products")
     
     # --------------------------------- #
@@ -124,8 +125,42 @@ def server(input, output, session):
         reactive_user_name.set("")
         reactive_password.set("")
         login_ok.set(False)
-        
-    # Filtering
+    
+    # ------------------------------------------------------- #
+    # Monitor if there is a new product added to the database #
+    # --------------------------------------------------------#
+    def check_db_count():
+        # This function runs every interval_secs. 
+        # If the return value changes, the decorated function below runs.
+        return get_products_count()
+
+    @reactive.poll(check_db_count, interval_secs=5)
+    def current_db_count():
+        # This runs only when check_db_count() returns a new value
+        return get_products_count()
+
+    @reactive.effect
+    def _notify_new_product():
+        current = current_db_count()
+        previous = last_count.get()
+
+        # Initialize on first run without showing modal
+        if previous is None:
+            last_count.set(current)
+            return
+
+        # If count increased, show modal
+        if current > previous:
+            ui.modal_show(
+                ui.modal(
+                    "New product added!",
+                    title="Notification",
+                    easy_close=True,
+                    footer=ui.modal_button("Close")
+                )
+            )
+
+    # DYNAMIC CONTROL CENTER
     @render.ui
     def dynamic_control_center():
         if not is_admin():
@@ -160,7 +195,7 @@ def server(input, output, session):
             style="display:flex; flex-direction:column; gap: 1rem;"
         )
 
-    # INCOMPLETE TAB #
+    # INCOMPLETE PRODUCTS TAB
     @render.text
     def incomplete_products_instruction():
         if not is_admin():
@@ -832,6 +867,5 @@ def server(input, output, session):
             response = get_incomplete_products_with_alike_products()
             products = pd.json_normalize(response)
             incomplete_products_with_alike_products.set(products)
-            
 
 app = App(app_ui, server)
