@@ -649,18 +649,19 @@ def server(input, output, session):
         
         if meta_cols:
             header_row = ui.tags.tr(
-                *[ui.tags.th(c, style="padding: 5px; border: 1px solid #ddd; background-color: #f9f9f9;") for c in meta_cols]
+                *[ui.tags.th(c, style="padding: 5px; border: 1px solid #ddd; background-color: #a5b4fb; text-align: center;") for c in meta_cols]
             )
             
             body_rows = []
             for _, row in df.iterrows():
                 cells = [ui.tags.td(str(row[c]), style="padding: 5px; border: 1px solid #ddd;") for c in meta_cols]
-                body_rows.append(ui.tags.tr(*cells))
+                body_rows.append(ui.tags.tr(*cells, class_="incompleted_table_rows"))
             
             meta_table = ui.tags.table(
                 ui.tags.thead(header_row),
                 ui.tags.tbody(*body_rows),
-                style="width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 0.85rem;"
+                # style="width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 0.85rem;"
+                class_="comparison_table"
             )
         else:
             meta_table = ui.tags.div("No metadata available.")
