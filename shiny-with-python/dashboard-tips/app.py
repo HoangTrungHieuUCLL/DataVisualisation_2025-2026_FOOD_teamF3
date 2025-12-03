@@ -253,7 +253,7 @@ def server(input, output, session):
             save_changes_button = ui.tags.div()
         else:
             save_changes_button = ui.input_action_button('save_product', "Save changes",
-                                                         style='width: 15rem')
+                                                         class_="button")
 
         return ui.tags.div(
             ui.tags.div(
@@ -680,11 +680,11 @@ def server(input, output, session):
                 if len(verified_df) > 1:
                     # Matrix: Unverified vs Each Verified
                     verified_ids = verified_df[id_col].astype(str).tolist()
-                    header_cells = [ui.tags.th("Unverified Product", style="padding: 5px; border: 1px solid #ddd; background-color: #f9f9f9;")]
+                    header_cells = [ui.tags.th("Unverified Product", style="padding: 5px; border: 1px solid #ddd;")]
                     for vid in verified_ids:
-                        header_cells.append(ui.tags.th(f"{vid}", style="padding: 5px; border: 1px solid #ddd; background-color: #f9f9f9;"))
+                        header_cells.append(ui.tags.th(f"{vid}", style="padding: 5px; border: 1px solid #ddd;"))
                     
-                    header_row = ui.tags.tr(*header_cells)
+                    header_row = ui.tags.tr(*header_cells, style="padding: 5px; border: 1px solid #ddd; background-color: #a5b4fb; text-align: center;")
                     
                     body_rows = []
                     for _, u_row in unverified_df.iterrows():
@@ -693,50 +693,71 @@ def server(input, output, session):
                         
                         # Calculate distances first to find min
                         dists = []
+                        sim_pcts = []
                         for _, v_row in verified_df.iterrows():
                             diff = u_row[numeric_cols] - v_row[numeric_cols]
                             dist = (diff ** 2).sum() ** 0.5
+                            v_norm = (v_row[numeric_cols] ** 2).sum() ** 0.5
+                            
+                            if v_norm == 0:
+                                sim_pct = 100.0 if dist == 0 else float('-inf')
+                            else:
+                                diff_pct = (dist / v_norm * 100)
+                                sim_pct = 100 - diff_pct
+                                
                             dists.append(dist)
+                            sim_pcts.append(sim_pct)
                         
                         min_dist = min(dists) if dists else -1
 
-                        for dist in dists:
+                        for i, dist in enumerate(dists):
+                            sim_pct = sim_pcts[i]
                             style = "padding: 5px; border: 1px solid #ddd;"
                             if dist == min_dist:
-                                style += " color: red; font-weight: bold;"
-                            row_cells.append(ui.tags.td(f"{dist:.2f}", style=style))
+                                style += " color: green; font-weight: bold;"
+                            
+                            display_val = f"{sim_pct:.1f}%" if sim_pct != float('-inf') else "N/A"
+                            row_cells.append(ui.tags.td(display_val, style=style))
                         
                         body_rows.append(ui.tags.tr(*row_cells))
                     
                     diff_scores_ui = ui.tags.div(
-                        ui.tags.h5("Similarity score"),
-                        ui.tags.p("* lower = more similar", style="margin-top: 10px; color: red"),
+                        ui.tags.h5("Similarity score matrix"),
                         ui.tags.table(
                             ui.tags.thead(header_row),
                             ui.tags.tbody(*body_rows),
-                            style="width: auto; border-collapse: collapse; margin-bottom: 20px; font-size: 0.85rem;"
+                            class_="comparison_table"
                         ),
                         style="margin-top: 20px;"
                     )
                 else:
                     # Single verified product (centroid logic is same as distance to single point)
                     centroid = verified_df[numeric_cols].mean()
+                    centroid_norm = (centroid ** 2).sum() ** 0.5
+                    
                     results = []
                     for _, row in unverified_df.iterrows():
                         diff = row[numeric_cols] - centroid
                         dist = (diff ** 2).sum() ** 0.5
-                        results.append((row[id_col], dist))
+                        
+                        if centroid_norm == 0:
+                            sim_pct = 100.0 if dist == 0 else float('-inf')
+                        else:
+                            diff_pct = (dist / centroid_norm * 100)
+                            sim_pct = 100 - diff_pct
+                            
+                        results.append((row[id_col], dist, sim_pct))
                     
                     min_dist = min(r[1] for r in results) if results else -1
                     
                     scores_ui = []
-                    for r_id, dist in results:
-                        style = "color: red; font-weight: bold;" if dist == min_dist else ""
-                        scores_ui.append(ui.tags.li(f"{r_id}: {dist:.2f}", style=style))
+                    for r_id, dist, sim_pct in results:
+                        style = "color: green; font-weight: bold;" if dist == min_dist else ""
+                        display_val = f"{sim_pct:.1f}%" if sim_pct != float('-inf') else "N/A"
+                        scores_ui.append(ui.tags.li(f"{r_id}: {display_val}", style=style))
                     
                     diff_scores_ui = ui.tags.div(
-                        ui.tags.h5("Similarity score"),
-                        ui.tags.p("* lower = more similar", style="margin-top: 10px; color: red"),
+                        ui.tags.h5(f"Similarity score to product {verified_df.iloc[0]['id']}"),
                         ui.tags.ul(*scores_ui),
                         style="margin-top: 20px;"
                     )
