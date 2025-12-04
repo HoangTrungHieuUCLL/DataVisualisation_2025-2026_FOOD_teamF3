@@ -22,7 +22,7 @@ def render_field(df: DataFrame, col_name: str):
             ui.tags.div(
                 display_val or "",
                 id=input_id,
-                style="background:#f5f5f5; border:1px solid #ddd; display:flex; align-items:center; padding: 0.375rem 0.75rem; height: 36.5px; width: 300px; border-radius: 3px;"
+                style="background:#f5f5f5; border:1px solid #ddd; display:flex; align-items:center; padding: 0.375rem 0.75rem; min-height: 36.5px; height: 100%; width: 300px; border-radius: 3px;"
             ),
             style="display:flex; flex-direction:column; width:100%; max-width:320px;"
         )
