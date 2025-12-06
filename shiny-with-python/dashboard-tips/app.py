@@ -4,7 +4,8 @@ import plotly.express as px
 import requests
 import re
 import json
-from services import get_incompleted_products, get_product_info, get_all_products, get_alike_products, link_product, get_incomplete_products_with_alike_products, update_product_info, get_products_count, get_latest_product, predict_cluster, re_clustering
+from services import get_incompleted_products, get_product_info, get_all_products, get_alike_products, link_product, get_incomplete_products_with_alike_products, update_product_info, get_products_count, get_latest_product, get_all_newly_added_products, re_clustering
+# predict_cluster
 from tool_functions import _sanitize_id, render_field, render_table, render_alike_products_table
 from shared import app_dir
 from shinywidgets import output_widget, render_plotly
@@ -25,6 +26,8 @@ app_ui = ui.page_sidebar(
                          ui.output_ui("incomplete_products_with_alike_products_listing")),
             ui.nav_panel("Unique incomplete products",
                          ui.output_ui("incomplete_products_without_alike_products_listing")),
+            ui.nav_panel("Newly added products",
+                         ui.output_ui("newly_added_products_listing")),
             id="main_tabs",
             selected="Incomplete products with alike products"
         )
@@ -53,6 +56,7 @@ def server(input, output, session):
     clicked_products = _ClickedProducts()
     last_count = reactive.Value(None)
     # current_tab = reactive.Value("Incomplete products with alike products")
+    newly_added_products = reactive.Value(pd.DataFrame())
 
     # --------------------------------- #
     # LOG IN                            #
@@ -68,6 +72,34 @@ def server(input, output, session):
     #     if tab:
     #         current_tab.set(tab)
 
+    def update_the_tables():
+        # Update incomplete product listings
+        products = get_incompleted_products()
+        if isinstance(products, dict) and "error" in products:
+            return ui.tags.div(
+                ui.tags.p("Incomplete products"),
+                ui.tags.p(
+                    f"Error loading products: {products['error']}", class_="panel-box")
+            )
+
+        df_tmp = pd.json_normalize(products)
+
+        # Ensure cluster_id is numeric
+        if 'cluster_id' in df_tmp.columns:
+            df_tmp['cluster_id'] = pd.to_numeric(df_tmp['cluster_id'], errors='coerce').fillna(-1).astype(int)
+
+        df_with_alike_products = df_tmp[df_tmp['cluster_id'] != -1]
+        df_without_alike_products = df_tmp[df_tmp['cluster_id'] == -1]
+
+        incomplete_products_with_alike_products.set(df_with_alike_products)
+        incomplete_products_without_alike_products.set(df_without_alike_products)
+        
+        # Update newly added product listing
+        all_newly_added_products = get_all_newly_added_products()
+        df_newly_added = pd.json_normalize(all_newly_added_products)
+        newly_added_products.set(df_newly_added)
+        
+        
     @render.ui
     def login_card():
         if is_admin() == False:
@@ -79,25 +111,7 @@ def server(input, output, session):
                 class_="panel-box"
             )
         else:
-            products = get_incompleted_products()
-            if isinstance(products, dict) and "error" in products:
-                return ui.tags.div(
-                    ui.tags.p("Incomplete products"),
-                    ui.tags.p(
-                        f"Error loading products: {products['error']}", class_="panel-box")
-                )
-
-            df_tmp = pd.json_normalize(products)
-
-            # Ensure cluster_id is numeric
-            if 'cluster_id' in df_tmp.columns:
-                df_tmp['cluster_id'] = pd.to_numeric(df_tmp['cluster_id'], errors='coerce').fillna(-1).astype(int)
-
-            df_with_alike_products = df_tmp[df_tmp['cluster_id'] != -1]
-            df_without_alike_products = df_tmp[df_tmp['cluster_id'] == -1]
-
-            incomplete_products_with_alike_products.set(df_with_alike_products)
-            incomplete_products_without_alike_products.set(df_without_alike_products)
+            update_the_tables()
 
             return ui.tags.div(
                 ui.tags.h4(f"Hello {reactive_user_name.get()}!"),
@@ -157,88 +171,13 @@ def server(input, output, session):
 
         # If count increased, show modal
         if current > previous:
-
-            # Retrieve the new product
-            new_product = get_latest_product()
-
-            # print(new_product)
-
-            new_product = pd.json_normalize(new_product)
-
-            # feature_cols = ['name', 'name_search', 'remarks',
-            #                 'synonyms', 'brands', 'brands_search', 'bron', 'categories', 'energy', 'protein', 'fat', 'saturated_fatty_acid', 'carbohydrates', 'sugar',
-            #                 'starch', 'dietary_fiber', 'salt', 'sodium', 'k', 'ca', 'p', 'fe', 'polyols',
-            #                 'cholesterol', 'omega6', 'omega3', 'mov', 'eov', 'vit_d', 'vit_c',
-            #                 'vit_b12', 'vit_b6', 'vit_b2', 'vit_b1', 'vit_a', 'mg', 'water',
-            #                 'glucose', 'fructose', 'excess_fructose', 'lactose', 'sorbitol', 'remarks_carbohydrates',
-            #                 'mannitol', 'fructans', 'gos', 'unit']
-
-            # print(new_product[feature_cols])
-            
-            all_products_json = get_all_products()
-            all_products_pd = pd.json_normalize(all_products_json)
-
-            re_clustering(all_products_pd)
-            
-            products = get_incompleted_products()
-            if isinstance(products, dict) and "error" in products:
-                return ui.tags.div(
-                    ui.tags.p("Incomplete products"),
-                    ui.tags.p(
-                        f"Error loading products: {products['error']}", class_="panel-box")
-                )
-
-            df_tmp = pd.json_normalize(products)
-            
-            # Ensure cluster_id is numeric
-            if 'cluster_id' in df_tmp.columns:
-                df_tmp['cluster_id'] = pd.to_numeric(df_tmp['cluster_id'], errors='coerce').fillna(-1).astype(int)
-
-            df_with_alike_products = df_tmp[df_tmp['cluster_id'] != -1]
-            df_without_alike_products = df_tmp[df_tmp['cluster_id'] == -1]
-
-            incomplete_products_with_alike_products.set(df_with_alike_products)
-            incomplete_products_without_alike_products.set(
-                df_without_alike_products)
-
-            # print(prediction)
-
-            ui.modal_show(
-                ui.modal(
-                    ui.tags.h6(
-                        f"New product added: {new_product.iloc[0]['id']}"),
-                    # ui.tags.p(f"Predicted cluster: {prediction}"),
-                    title="New product detected",
-                    easy_close=True,
-                    footer=ui.modal_button("Close")
-                )
-            )
+            update_the_tables()
 
     # DYNAMIC CONTROL CENTER
     @render.ui
     def dynamic_control_center():
         if not is_admin():
             return ui.tags.div()
-
-        products = get_incompleted_products()
-        if isinstance(products, dict) and "error" in products:
-            return ui.tags.div(
-                ui.tags.p("Incomplete products"),
-                ui.tags.p(
-                    f"Error loading products: {products['error']}", class_="panel-box")
-            )
-
-        df_tmp = pd.json_normalize(products)
-
-        # Ensure cluster_id is numeric
-        if 'cluster_id' in df_tmp.columns:
-            df_tmp['cluster_id'] = pd.to_numeric(df_tmp['cluster_id'], errors='coerce').fillna(-1).astype(int)
-
-        df_with_alike_products = df_tmp[df_tmp['cluster_id'] != -1]
-        df_without_alike_products = df_tmp[df_tmp['cluster_id'] == -1]
-
-        incomplete_products_with_alike_products.set(df_with_alike_products)
-        incomplete_products_without_alike_products.set(df_without_alike_products)
 
         # General keyword search across all columns
         search_by_keywords = ui.tags.div(
@@ -317,6 +256,59 @@ def server(input, output, session):
             style="display:flex; flex-direction:column; gap:1rem; margin-top:1rem; margin-bottom:1rem;",
             class_="incomplete_products_without_alike_products_listing"
         )
+        
+    @render.ui
+    def newly_added_products_listing():
+        if not is_admin():
+            return ui.tags.div()
+
+        df_newly_added = newly_added_products.get()
+
+        if (df_newly_added is None or df_newly_added.empty):
+            return ui.tags.div("No products found.")
+
+        table_newly_added = render_table(df_newly_added)
+
+        return ui.tags.div(
+            ui.input_action_button("re_cluster_btn", "Find similar products"),
+            table_newly_added,
+            style="display:flex; flex-direction:column; gap:1rem; margin-top:1rem; margin-bottom:1rem;",
+            class_="newly_added_products_listing"
+        )
+
+    @reactive.effect
+    @reactive.event(input.re_cluster_btn)
+    def _on_re_cluster():
+        with ui.Progress(min=1, max=30) as p:
+            p.set(message="Finding similar products in yor database...", detail="This may take a while")
+            
+            all_products = get_all_products()
+            if isinstance(all_products, dict) and "error" in all_products:
+                ui.notification_show(f"Error fetching products: {all_products['error']}", type="error")
+                return
+
+            df_all = pd.json_normalize(all_products)
+            
+            try:
+                results_df = re_clustering(df_all)
+                
+                if not results_df.empty:
+                    modal_ui = ui.modal(
+                        ui.tags.p("Found similar products for newly added items:"),
+                        ui.tags.ul(
+                            [ui.tags.li(f"{row['id']} {row['name']}: {row['cluster_count'] - 1}") 
+                             for _, row in results_df.iterrows()]
+                        ),
+                        easy_close=True,
+                        footer=ui.modal_button("Close"),
+                        size="l"
+                    )
+                    ui.modal_show(modal_ui)
+                
+                update_the_tables()
+                ui.notification_show("Finding simillar product completed!", type="message")
+            except Exception as e:
+                ui.notification_show(f"Error: {str(e)}", type="error")
 
     @reactive.effect
     @reactive.event(input.reset_search_by_keywords)
@@ -623,6 +615,7 @@ def server(input, output, session):
                 response = link_product(pid, link_to_product_id)
                 get_updated_product(pid)
         target_link_id.set(None)
+        update_the_tables()
 
     @reactive.effect
     @reactive.event(input.cancel_link)
@@ -953,9 +946,7 @@ def server(input, output, session):
         else:
             ui.notification_show("Product saved successfully!", type="message")
             get_updated_product(product_id)
-            response = get_incomplete_products_with_alike_products()
-            products = pd.json_normalize(response)
-            incomplete_products_with_alike_products.set(products)
+            update_the_tables()
 
 
 app = App(app_ui, server)

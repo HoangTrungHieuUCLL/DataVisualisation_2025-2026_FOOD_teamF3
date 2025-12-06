@@ -12,16 +12,6 @@ from sklearn.metrics import pairwise_distances
 # Create Flask app
 app = Flask(__name__)
 
-try:
-    # Load the models saved from the notebook
-    dbscan_model = joblib.load("dbscan_model.pkl")
-    tfidf_vectorizer = joblib.load("tfidf_vectorizer.pkl")
-    print("✅ DBSCAN model and vectorizer loaded successfully")
-except Exception as e:
-    print(f"❌ Failed to load models: {e}")
-    dbscan_model = None
-    tfidf_vectorizer = None
-
 # Connection to database
 def connect_to_database():
     try:
@@ -281,6 +271,58 @@ def update_cluster_id():
             cur.close()
         if conn:
             conn.close()
+            
+@app.route("/products/update/newly_added_products", methods=["PUT"])
+def update_newly_added_products():
+    data = request.get_json()
+    
+    if not data:
+        return jsonify({"error": "No data provided"}), 400
+        
+    if isinstance(data, dict):
+        data = [data]
+        
+    conn = connect_to_database()
+    if not conn:
+        return jsonify({"error": "Database connection failed"}), 500
+        
+    cur = conn.cursor()
+    
+    try:
+        for item in data:
+            product_id = item.get('id')
+            
+            if product_id is not None:
+                cur.execute('UPDATE product SET newly_added = 0 WHERE id = %s;', (int(product_id),))
+        
+        conn.commit()
+        return jsonify({"success": True}), 200
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
+    
+
+@app.route("/products/new", methods=["GET"])
+def get_all_newly_added_products():
+    conn = connect_to_database()
+    cur = conn.cursor()
+    cur.execute('SELECT * FROM product WHERE active = 0 AND newly_added = 1;')
+    rows = cur.fetchall()
+    
+    # map rows to list[dict] using column names so jsonify can serialize it
+    columns = [desc[0] for desc in cur.description] if cur.description else []
+    results = [dict(zip(columns, row)) for row in rows] if rows else []
+    
+    cur.close()
+    conn.close()
+    
+    return jsonify(results)
 
 if __name__ == "__main__":
     app.run(debug=True)

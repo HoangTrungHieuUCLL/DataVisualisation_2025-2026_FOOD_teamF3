@@ -107,6 +107,8 @@ def get_latest_product():
 
 
 def re_clustering(df: DataFrame):
+    newly_added_products = df[df['newly_added'] == 1]
+    
     text_cols = ['name', 'name_search', 'remarks', 'synonyms', 'brands', 'brands_search', 'bron', 'categories']
     
     df_cleaned = create_cleaned_text_feature(df, text_cols)
@@ -123,6 +125,9 @@ def re_clustering(df: DataFrame):
     # Calculate cluster_count
     cluster_counts = df_cleaned['temp_cluster_id'].value_counts()
     df_cleaned['cluster_count'] = df_cleaned['temp_cluster_id'].map(cluster_counts)
+    
+    # Set cluster_count to 1 where temp_cluster_id is -1
+    df_cleaned.loc[df_cleaned['temp_cluster_id'] == -1, 'cluster_count'] = 1
 
     # Call API to update cluster_id
     API_URL = "http://127.0.0.1:5000/products/update/cluster"
@@ -132,3 +137,23 @@ def re_clustering(df: DataFrame):
         requests.put(API_URL, json=data)
     except Exception as e:
         print(f"Error updating clusters: {e}")
+        
+    API_URL = "http://127.0.0.1:5000/products/update/newly_added_products"
+    try:
+        # Convert to list of dicts
+        data_newly_added_products = newly_added_products[['id']].to_dict(orient='records')
+        requests.put(API_URL, json=data_newly_added_products)
+    except Exception as e:
+        print(f"Error updating clusters: {e}")
+
+    # Return results for newly added products
+    return df_cleaned[df_cleaned['id'].isin(newly_added_products['id'])]
+        
+def get_all_newly_added_products():
+    API_URL = "http://127.0.0.1:5000/products/new"
+    
+    try:
+        products = requests.get(API_URL)
+        return products.json()
+    except Exception as e:
+        return {"error": str(e)}

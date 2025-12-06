@@ -52,6 +52,7 @@ body {
 
 .incomplete_products_with_alike_products_listing,
 .incomplete_products_without_alike_products_listing,
+.newly_added_products_listing,
 .comparison_table {
   background: white;
   padding: 1.5rem;
