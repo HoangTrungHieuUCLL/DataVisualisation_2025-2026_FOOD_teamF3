@@ -67,11 +67,51 @@ body {
 }
 
 .button {
-  background: #fff59f;
+  position: relative;
+  background: transparent;
   padding: 1rem;
   /* border-radius: 1rem; */
   border: 4px solid #000;
   box-shadow: 4px 5px 0 1px #000;
+  width: fit-content;
+  z-index: 1;
+  transition: color 0.5s ease;
+}
+
+.button::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: #E8B3C0;
+  z-index: -1;
+}
+
+.button::after {
+  color: white;
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    to right, 
+    #1C76F4 0%, 
+    #A241F7 25%, 
+    #E93489 50%, 
+    #F32B3E 75%, 
+    #F48B2F 100%
+  );
+  z-index: -1;
+  opacity: 0;
+  transition: opacity 0.5s ease;
+}
+
+.button:hover::after {
+  opacity: 1;
 }
 
 .link_and_compare_button_container {
