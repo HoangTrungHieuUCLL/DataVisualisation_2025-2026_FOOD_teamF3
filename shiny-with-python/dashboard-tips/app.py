@@ -107,7 +107,7 @@ def server(input, output, session):
                 ui.tags.h5("Admin Login", style="text-align: center"),
                 ui.input_text("username", "Username"),
                 ui.input_password("password", "Password"),
-                ui.input_action_button("login", "Login"),
+                ui.input_action_button("login", "Login", style="width: 100%; box-shadow: none;", class_="button"),
                 class_="panel-box"
             )
         else:
@@ -115,7 +115,7 @@ def server(input, output, session):
 
             return ui.tags.div(
                 ui.tags.h4(f"Hello {reactive_user_name.get()}!"),
-                ui.input_action_button("logout", "Logout"),
+                ui.input_action_button("logout", "Logout", style="width: 100%; box-shadow: none;", class_="button"),
                 class_="panel-box"
             )
 
@@ -134,7 +134,7 @@ def server(input, output, session):
                 ui.modal(
                     ui.tags.p("Wrong username or password."),
                     easy_close=True,
-                    size="s"
+                    size="l"
                 )
             )
 
@@ -183,7 +183,7 @@ def server(input, output, session):
         search_by_keywords = ui.tags.div(
             ui.input_text('keywords', 'Search'),
             ui.input_action_button(
-                'reset_search_by_keywords', 'Reset', style="width:100%")
+                'reset_search_by_keywords', 'Reset', style="width:100%; box-shadow: none;", class_="button")
         )
         return ui.tags.div(
             ui.tags.hr(),
@@ -900,9 +900,6 @@ def server(input, output, session):
                 data_to_update[col] = val
             except Exception:
                 pass
-
-        # Debug print
-        print(f"Saving product {product_id} with data: {data_to_update}")
 
         if not data_to_update:
             ui.notification_show("No changes to save.", type="warning")
