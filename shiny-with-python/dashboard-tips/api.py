@@ -122,7 +122,7 @@ def get_all_incompleted_products():
     conn = connect_to_database()
     cur = conn.cursor()
     # Use a simple SELECT and filter incomplete rows (rows with any NULL) in Python
-    cur.execute('SELECT * FROM product WHERE active = 0;')
+    cur.execute('SELECT * FROM product WHERE active = 0 AND link_to IS NULL;')
     rows = cur.fetchall()
 
     # map rows to list[dict] using column names so jsonify can serialize it

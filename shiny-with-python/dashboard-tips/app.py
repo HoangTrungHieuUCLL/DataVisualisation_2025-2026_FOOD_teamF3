@@ -515,9 +515,36 @@ def server(input, output, session):
                 class_="button"
             )
 
+        link_multiple_btn = ui.tags.div()
+        
+        verified_ids = []
+        if not df_alike_verified.empty and 'id' in df_alike_verified.columns:
+             verified_ids = df_alike_verified['id'].tolist()
+        
+        has_verified_selected = any(pid in verified_ids for pid in clicked_list)
+        
+        unverified_ids = []
+        if not df_alike_unverified.empty and 'id' in df_alike_unverified.columns:
+             unverified_ids = df_alike_unverified['id'].tolist()
+             
+        current_id = int(df_selected.iloc[0]['id'])
+        selected_unverified_others = [pid for pid in clicked_list if pid in unverified_ids and pid != current_id]
+
+        if not has_verified_selected and len(selected_unverified_others) > 0:
+             link_multiple_btn = ui.tags.button(
+                f"Link to this product ID {current_id}",
+                type="button",
+                onclick=f"event.stopPropagation(); Shiny.setInputValue('link_selected_to_current', {repr(current_id)}, {{priority: 'event'}})",
+                class_="button"
+            )
+
         return ui.tags.div(
             ui.tags.h5(f"Alike products"),
-            compare_selected_btn,
+            ui.tags.div(
+                compare_selected_btn,
+                link_multiple_btn,
+                style="display:flex; gap: 10px; align-items: center; margin-bottom: 10px;"
+            ),
             table_verified,
             table_unverified,
             style="width: 100%;"
@@ -613,6 +640,21 @@ def server(input, output, session):
         target_link_id.set(pid)
 
     @reactive.effect
+    @reactive.event(input.link_selected_to_current)
+    def _on_link_selected_to_current():
+        target_id = input.link_selected_to_current()
+        selected_pids = clicked_products.get() or []
+        
+        # Filter out target_id from selected_pids
+        products_to_link = [pid for pid in selected_pids if pid != target_id]
+        
+        if len(products_to_link) > 0:
+            clicked_products.set(products_to_link)
+            target_link_id.set(target_id)
+        else:
+             ui.notification_show("No other products selected to link.", type="warning")
+
+    @reactive.effect
     @reactive.event(input.confirm_link)
     def _on_confirm_link():
         link_to_product_id = target_link_id.get()
@@ -620,9 +662,13 @@ def server(input, output, session):
             for pid in clicked_products.get():
                 response = link_product(pid, link_to_product_id)
                 get_updated_product(pid)
+            
+            # Also update the target product view if it is open
+            get_updated_product(link_to_product_id)
+            
         target_link_id.set(None)
-        update_the_tables()
-
+        update_the_tables()    
+        
     @reactive.effect
     @reactive.event(input.cancel_link)
     def _on_cancel_link():
