@@ -114,6 +114,30 @@ body {
   opacity: 1;
 }
 
+.recently_clicked {
+  text-decoration: underline;
+  cursor: pointer;
+  color: black;
+  display: inline-block;
+  transition: transform 0.3s ease;
+}
+
+.recently_clicked:hover {
+  text-decoration: underline;
+  background: linear-gradient(
+    to right, 
+    #1C76F4 0%, 
+    #A241F7 25%, 
+    #E93489 50%, 
+    #F32B3E 75%, 
+    #F48B2F 100%
+  );
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  color: transparent;
+}
+
 .link_and_compare_button_container {
   display: flex;
   flex-direction: row;

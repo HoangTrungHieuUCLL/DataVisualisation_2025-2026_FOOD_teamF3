@@ -18,7 +18,8 @@ import joblib
 app_ui = ui.page_sidebar(
     ui.sidebar(
         ui.output_ui("login_card"),
-        ui.output_ui("dynamic_control_center")
+        ui.output_ui("dynamic_control_center"),
+        ui.output_ui("recent_products_sidebar")
     ),
     ui.layout_columns(
         ui.navset_tab(
@@ -57,6 +58,7 @@ def server(input, output, session):
     last_count = reactive.Value(None)
     # current_tab = reactive.Value("Incomplete products with alike products")
     newly_added_products = reactive.Value(pd.DataFrame())
+    clicked_history = reactive.Value([])
 
     # --------------------------------- #
     # LOG IN                            #
@@ -192,6 +194,48 @@ def server(input, output, session):
                 class_="panel-box"
             ),
             style="display:flex; flex-direction:column; gap: 1rem;"
+        )
+        
+    @render.ui
+    def recent_products_sidebar():
+        if not is_admin():
+            return ui.tags.div()
+            
+        history = clicked_history.get()
+        if not history:
+            return ui.tags.div()
+            
+        items = []
+        for item in history:
+            # Handle item as dict {'id': pid, 'name': name}
+            if isinstance(item, dict):
+                pid = item.get('id')
+                name = item.get('name')
+                display_text = f"{pid}: {name}"
+            else:
+                # Fallback for legacy simple IDs
+                pid = item
+                display_text = f"ID: {pid}"
+
+            items.append(
+                ui.tags.div(
+                    ui.tags.a(
+                        display_text,
+                        href="#",
+                        onclick=f"Shiny.setInputValue('modify_product_row', {pid}, {{priority: 'event'}}); return false;",
+                        class_="recently_clicked"
+                    ),
+                    style="margin-bottom: 5px;"
+                )
+            )
+            
+        return ui.tags.div(
+            ui.tags.h6("Recently Viewed"),
+            ui.tags.div(
+                *items,
+                style="display: flex; flex-direction: column;"
+            ),
+            class_="panel-box"
         )
 
     # INCOMPLETE PRODUCTS TAB
@@ -413,6 +457,21 @@ def server(input, output, session):
                 product_name = ""
         else:
             product_name = ""
+
+        # Update history with both ID and Name
+        current_history = list(clicked_history.get())
+        
+        # Remove existing entry for this pid if it exists (to move it to top)
+        # Handle both dicts and legacy ints
+        current_history = [item for item in current_history if (isinstance(item, dict) and item.get('id') != pid) or (not isinstance(item, dict) and item != pid)]
+        
+        # Insert new entry at the top
+        current_history.insert(0, {'id': pid, 'name': product_name})
+        
+        # Keep only the last 5 items
+        if len(current_history) > 5:
+            current_history = current_history[:5]
+        clicked_history.set(current_history)
 
         close_edit_form_button = ui.input_action_button('close_edit_form', 'X',
                                                         style='border: 1px solid #ddd; height: 30px; width: 30px; text-align: center; padding: 0')
