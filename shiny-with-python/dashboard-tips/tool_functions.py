@@ -45,16 +45,50 @@ def render_table(df: pd.DataFrame):
         return ui.tags.div(ui.tags.p("No products.", style="color:#666;"))
 
     # Decide columns to show (use sensible defaults if present)
-    base_cols = [c for c in ['id', 'name', 'energy', 'unit', 'synonyms', 'brands', 'categories', 'link_to'] if c in df.columns]
+    base_cols = [c for c in ['id', 'name', 'energy', 'protein', 'unit', 'synonyms', 'brands', 'categories', 'cluster_count'] if c in df.columns]
 
-    header = ui.tags.tr(
-        *[ui.tags.th(col, style="padding:.25rem .5rem; text-align:left; border:1px solid #ddd;") for col in base_cols]
-    )
+    header_cells = []
+    for col in base_cols:
+        # Create sort buttons
+        sort_asc_btn = ui.tags.span(
+            "▲",
+            style="cursor:pointer; font-size:1rem; color:#ddd;",
+            onclick=f"event.stopPropagation(); Shiny.setInputValue('sort_column', '{col}'); Shiny.setInputValue('sort_direction', 'asc');"
+        )
+        sort_desc_btn = ui.tags.span(
+            "▼",
+            style="cursor:pointer; font-size:1rem; color:#ddd;",
+            onclick=f"event.stopPropagation(); Shiny.setInputValue('sort_column', '{col}'); Shiny.setInputValue('sort_direction', 'desc');"
+        )
+        
+        display_col = "alike products" if col == "cluster_count" else col
+        
+        header_content = ui.tags.div(
+            ui.tags.span(display_col),
+            ui.tags.div(
+                sort_asc_btn,
+                sort_desc_btn,
+                style="display:flex; flex-direction:column; line-height:0.8; margin-left: 5px;"
+            ),
+            style="display:flex; align-items:center; justify-content:space-between;"
+        )
+        
+        header_cells.append(ui.tags.th(header_content, style="padding:.25rem .5rem; text-align:left; border:1px solid #ddd;"))
+
+    header = ui.tags.tr(*header_cells)
     body_rows = []
     for _, row in df.iterrows():
         pid = row.get("id")
-        cells = [ui.tags.td(str(row.get(
-            col, "")), style="padding:.25rem .5rem; vertical-align:center; border: 1px solid #ddd;") for col in base_cols]
+        cells = []
+        for col in base_cols:
+            val = row.get(col, "")
+            if col == "cluster_count":
+                try:
+                    val = int(val) - 1
+                except:
+                    pass
+            cells.append(ui.tags.td(str(val), style="padding:.25rem .5rem; vertical-align:center; border: 1px solid #ddd;"))
+            
         onclick = f"Shiny.setInputValue('modify_product_row', {repr(pid)}, {{priority: 'event'}});"
         body_rows.append(
             ui.tags.tr(

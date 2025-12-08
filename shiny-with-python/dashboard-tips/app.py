@@ -265,6 +265,16 @@ def server(input, output, session):
         except Exception:
             pass
 
+        # Apply sorting
+        try:
+            sort_col = input.sort_column()
+            sort_dir = input.sort_direction()
+            if sort_col and sort_dir and sort_col in df_with.columns:
+                ascending = sort_dir == 'asc'
+                df_with = df_with.sort_values(by=sort_col, ascending=ascending)
+        except Exception:
+            pass
+
         table_with = render_table(df_with)
 
         return ui.tags.div(
@@ -293,6 +303,16 @@ def server(input, output, session):
         except Exception:
             pass
 
+        # Apply sorting
+        try:
+            sort_col = input.sort_column()
+            sort_dir = input.sort_direction()
+            if sort_col and sort_dir and sort_col in df_without.columns:
+                ascending = sort_dir == 'asc'
+                df_without = df_without.sort_values(by=sort_col, ascending=ascending)
+        except Exception:
+            pass
+
         table_without = render_table(df_without)
 
         return ui.tags.div(
@@ -310,6 +330,16 @@ def server(input, output, session):
 
         if (df_newly_added is None or df_newly_added.empty):
             return ui.tags.div("No products found.")
+
+        # Apply sorting
+        try:
+            sort_col = input.sort_column()
+            sort_dir = input.sort_direction()
+            if sort_col and sort_dir and sort_col in df_newly_added.columns:
+                ascending = sort_dir == 'asc'
+                df_newly_added = df_newly_added.sort_values(by=sort_col, ascending=ascending)
+        except Exception:
+            pass
 
         table_newly_added = render_table(df_newly_added)
 
@@ -938,8 +968,19 @@ def server(input, output, session):
 
                         display_val = f"{sim_pct:.1f}%" if sim_pct != float(
                             '-inf') else "N/A"
+                        
+                        v_id = verified_ids[i]
+                        onclick_val = f"event.stopPropagation(); Shiny.setInputValue('compare_specific_pair', [{repr(u_id)}, {repr(v_id)}], {{priority: 'event'}})"
+                        
+                        cell_content = ui.tags.a(
+                            display_val,
+                            href="#",
+                            onclick=onclick_val,
+                            style="text-decoration: underline; cursor: pointer; color: inherit;"
+                        )
+
                         row_cells.append(ui.tags.td(
-                            display_val, style=style))
+                            cell_content, style=style))
 
                     body_rows.append(ui.tags.tr(*row_cells))
 
@@ -980,6 +1021,23 @@ def server(input, output, session):
     @reactive.event(input.close_compare)
     def _on_close_compare():
         products_to_compare.set(pd.DataFrame())
+
+    @reactive.effect
+    @reactive.event(input.compare_specific_pair)
+    def _on_compare_specific_pair():
+        pair_ids = input.compare_specific_pair()
+        if not pair_ids or len(pair_ids) != 2:
+            return
+
+        products_list = []
+        for pid in pair_ids:
+            p_info = get_product_info(pid)
+            if isinstance(p_info, dict) and "error" not in p_info:
+                products_list.append(p_info)
+
+        if products_list:
+            df_compare = pd.DataFrame(products_list)
+            products_to_compare.set(df_compare)
 
     @reactive.effect
     @reactive.event(input.save_product)
