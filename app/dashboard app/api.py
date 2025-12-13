@@ -8,6 +8,7 @@ import psycopg2
 import json
 import pandas as pd
 from sklearn.metrics import pairwise_distances
+from database_credentials import *
 
 # Create Flask app
 app = Flask(__name__)
@@ -15,11 +16,11 @@ app = Flask(__name__)
 # Connection to database
 def connect_to_database():
     try:
-        conn = psycopg2.connect(database = "view_food_clustered", 
-                                user = "postgres", 
-                                host= 'localhost',
-                                password = "Louis.hoang1506",
-                                port = 5432)
+        conn = psycopg2.connect(database = DATABASE, 
+                                user = USER, 
+                                host= HOST,
+                                password = PASSWORD,
+                                port = PORT)
         print("✅Connection ok")
         return conn
     except:
