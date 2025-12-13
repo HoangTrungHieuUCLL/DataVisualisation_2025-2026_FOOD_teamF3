@@ -44,6 +44,7 @@ The ultimate goal is to merge (link) duplicate or incomplete records to a "maste
     *   `link_confirmation_dialog`: Shows the "Are you sure?" UI before committing the change.
     *   `_on_confirm_link`: The event handler that actually calls the API to finalize the merge.
 
+---
 # What is shown in the app?
 ### 1. Side panel
 *   **Login / Logout** <br>
@@ -75,6 +76,7 @@ The information of that product is editable (partly).
 There are 3 components of this dashboard: compare by text columns (names, categories, ...), compare by nutrition values (protein, energy, ...) and bar chart + radar chart to visualise how different the nutrition values are. <br>
 This pop up gives user a detailed sense of how much the products are alike to each other.
 
+---
 # Configuration
 ### 1. Required packages and dependencies
 Run `pip install -r app/dashboard app/requirements.txt` to install all requirements and dependencies.
@@ -89,7 +91,7 @@ HOST= 'localhost'
 PASSWORD = "" # Your local database password
 PORT = 5432 # Change this depending on which port your local database is using
 ```
-
+---
 # How to run the app
 Open two terminals. In each terminal, run the following commands:
 ```Bash
@@ -102,5 +104,79 @@ python app/dashboard app/api.py # if Windows
 # Terminal 2
 shiny run --reload app/dashboard app/app.py
 ```
-
 Access the app's GUI via browser: `http://127.0.0.1:8000/`
+
+---
+# Data Loading, Cleaning, and Processing
+
+The data processing pipeline in your application is designed to prepare raw product data for **clustering algorithms** (specifically DBSCAN) to identify duplicate or similar items.
+
+The process flows from the **Database** $\rightarrow$ **API** $\rightarrow$ **Service Layer** $\rightarrow$ **Preprocessing Logic**.
+
+### 1. Data Loading
+The application does not load data from CSV files during runtime; it connects directly to a PostgreSQL database.
+
+*   **Connection:** The `connect_to_database` function in `api.py` establishes a connection using credentials from `database_credentials.py`.
+*   **Retrieval:** Functions like `get_all_products` execute SQL queries (`SELECT * FROM product`) to fetch raw data.
+*   **Conversion:** The raw SQL results are converted into a list of dictionaries (JSON-compatible) before being sent to the frontend or service layer.
+
+### 2. Data Preprocessing (`preprocessing.py`)
+This is the core of the data cleaning pipeline. The file `preprocessing.py` contains a specialized pipeline designed to normalize text so that "Apple Pie" and "apple-pie." are treated as the same mathematical vector.
+
+The main entry point is the function `create_cleaned_text_feature`. It takes a DataFrame and a list of text columns (e.g., `name`, `brands`, `categories`) and performs the following steps:
+
+#### Step A: Aggregation & Basic Cleaning
+1.  **Concatenation:** It joins all specified text columns into a single string per product.
+2.  **Normalization:** It converts everything to **lowercase** and removes **numbers** and **commas**.
+    *   *Why?* "Bio 500g" and "Bio" should be similar; the weight often distracts the clustering algorithm.
+
+#### Step B: Advanced Text Cleaning
+It applies the helper function `_remove_specific_chars_keep_spaces`:
+1.  **Symbol Removal:** Removes characters like `( ) = & % + ; / . -`.
+2.  **Possessives:** Removes English (`'s`) and Dutch (`'n`) possessive forms.
+3.  **Stopwords:** Removes common Dutch stopwords defined in `_dutch_stopwords` (e.g., "met", "van", "en").
+    *   *Why?* Words like "with" or "and" appear in almost every product and dilute the uniqueness of the product name.
+
+#### Step C: Deduplication
+It applies the helper function `_dedupe_words`:
+*   **Logic:** It splits the string into tokens and removes duplicate words while preserving order.
+*   *Example:* "Kellogg's Cornflakes Kellogg's" becomes "Kellogg's Cornflakes".
+
+#### Step D: Stemming
+It applies the helper function `_stem_sentence`:
+*   **Tool:** Uses the NLTK `PorterStemmer`.
+*   **Logic:** Reduces words to their root form.
+*   *Example:* "Cookies", "Cooked", and "Cooking" all become "Cook". This ensures that plural and singular forms match.
+
+#### Step E: Final Cleanup
+It applies `_remove_one_letter_words`:
+*   **Logic:** Removes any remaining tokens that are only 1 character long (e.g., stray "g" from grams or "l" from liters).
+
+### 3. Processing for Clustering (`services.py`)
+Once the text is cleaned, it is used in the `re_clustering` function to actually find the similar products.
+
+1.  **Vectorization:**
+    *   It uses `TfidfVectorizer` on the cleaned text column (`to_vectorize`).
+    *   This converts the text into a mathematical matrix where unique words have higher weights.
+
+2.  **DBSCAN Clustering:**
+    *   It runs the `DBSCAN` algorithm with `metric='cosine'`.
+    *   This groups vectors that point in the same direction (meaning they share significant words) into clusters.
+
+3.  **Result:**
+    *   Products found in the same cluster are assigned a `temp_cluster_id`.
+    *   These IDs are sent back to the database via the API to update the product records.
+
+---
+# Steps taken to make data usable
+The code for this process is written in `food_products_clustering.ipynb`
+### **Step 1:** The given dataset CSV file had some multilayer encoding error, so I had to fix this encoding problem.
+### **Step 2:** I concatinated and vectorized text columns.
+### **Step 3:** Use DBSCAN to find clusters of all the products.
+### **Step 4:** In pgAdmin4, create a new database.
+### **Step 5:** Create a new schema in the database.
+### **Step 6:** Create a new table called `product` with the corresponding columns from the CSV in the schema.
+### **Step 7:** Import the CSV file into table `product`.
+### **Step 8:** Define connection to the database in `database_credentials.py`
+
+---
