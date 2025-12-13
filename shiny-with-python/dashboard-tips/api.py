@@ -47,9 +47,11 @@ def get_products_count():
     conn = connect_to_database()
     cur = conn.cursor()
     try:
-        cur.execute('SELECT COUNT(*) FROM product;')
-        count = cur.fetchone()[0]
-        return jsonify({"count": count})
+        cur.execute('SELECT COUNT(*), SUM(scan_count) FROM product;')
+        row = cur.fetchone()
+        count = row[0]
+        scan_sum = row[1] if row[1] is not None else 0
+        return jsonify({"count": count, "scan_sum": scan_sum})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
     finally:
@@ -122,7 +124,7 @@ def get_all_incompleted_products():
     conn = connect_to_database()
     cur = conn.cursor()
     # Use a simple SELECT and filter incomplete rows (rows with any NULL) in Python
-    cur.execute('SELECT * FROM product WHERE active = 0 AND link_to IS NULL;')
+    cur.execute('SELECT * FROM product WHERE active = 0 AND link_to IS NULL ORDER BY scan_count DESC;')
     rows = cur.fetchall()
 
     # map rows to list[dict] using column names so jsonify can serialize it

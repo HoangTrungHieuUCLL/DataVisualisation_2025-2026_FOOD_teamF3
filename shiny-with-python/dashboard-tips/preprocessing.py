@@ -6,7 +6,7 @@ import string
 import nltk
 from nltk.stem import PorterStemmer
 from nltk.tokenize import word_tokenize
-from gensim.parsing.preprocessing import remove_stopwords # While imported in your original code, it's not used. We will stick to your custom logic.
+from gensim.parsing.preprocessing import remove_stopwords
 
 # Ensure NLTK resources are available (needed for word_tokenize and PorterStemmer)
 try:

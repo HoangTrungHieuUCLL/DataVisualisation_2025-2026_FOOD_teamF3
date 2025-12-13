@@ -92,7 +92,8 @@ def get_products_count():
     API_URL = "http://127.0.0.1:5000/products/count"
     try:
         response = requests.get(API_URL)
-        return response.json().get("count", 0)
+        data = response.json()
+        return (data.get("count", 0), data.get("scan_sum", 0))
     except Exception:
         return 0
 

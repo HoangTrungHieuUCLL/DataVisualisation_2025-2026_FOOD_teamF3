@@ -171,8 +171,12 @@ def server(input, output, session):
             last_count.set(current)
             return
 
-        # If count increased, show modal
-        if current > previous:
+        # Check if count increased or scan_sum changed
+        current_count, current_scan_sum = current
+        prev_count, prev_scan_sum = previous
+
+        if current_count > prev_count or current_scan_sum != prev_scan_sum:
+            last_count.set(current)
             update_the_tables()
 
     # DYNAMIC CONTROL CENTER

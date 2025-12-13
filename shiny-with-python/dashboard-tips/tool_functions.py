@@ -45,7 +45,7 @@ def render_table(df: pd.DataFrame):
         return ui.tags.div(ui.tags.p("No products.", style="color:#666;"))
 
     # Decide columns to show (use sensible defaults if present)
-    base_cols = [c for c in ['id', 'name', 'energy', 'protein', 'unit', 'synonyms', 'brands', 'categories', 'cluster_count'] if c in df.columns]
+    base_cols = [c for c in ['id', 'name', 'energy', 'protein', 'unit', 'synonyms', 'brands', 'categories', 'link_to', 'scan_count'] if c in df.columns]
 
     header_cells = []
     for col in base_cols:
