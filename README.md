@@ -83,7 +83,7 @@ Run `pip install -r app/dashboard app/requirements.txt` to install all requireme
 
 ### 2. Necessary files (assuming the dataset is saved in user's local database)
 Create a file called `database_credentials.py` in `app/dashboard app` repository. <br>
-Paste the following to the file:
+Paste the following to the file and modify the string according to your local database:
 ```python
 DATABASE = "" # Your local databse name
 USER = "" # Your local database user name
