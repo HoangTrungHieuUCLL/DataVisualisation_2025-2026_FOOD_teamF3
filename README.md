@@ -93,11 +93,13 @@ PORT = 5432 # Change this depending on which port your local database is using
 # How to run the app
 Open two terminals. In each terminal, run the following commands:
 ```Bash
-python3 app/dashboard app/api.py # macOS or Linux
-python app/dashboard app/api.py # Windows
+# Terminal 1
+python3 app/dashboard app/api.py # if macOS or Linux
+python app/dashboard app/api.py # if Windows
 ```
 
 ```Bash
+# Terminal 2
 shiny run --reload app/dashboard app/app.py
 ```
 
