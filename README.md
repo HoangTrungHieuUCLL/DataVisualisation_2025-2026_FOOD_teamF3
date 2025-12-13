@@ -79,4 +79,26 @@ This pop up gives user a detailed sense of how much the products are alike to ea
 ### 1. Required packages and dependencies
 Run `pip install -r app/dashboard app/requirements.txt` to install all requirements and dependencies.
 
-### 2. Necessary files
+### 2. Necessary files (assuming the dataset is saved in user's local database)
+Create a file called `database_credentials.py` in `app/dashboard app` repository. <br>
+Paste the following to the file:
+```python
+DATABASE = "" # Your local databse name
+USER = "" # Your local database user name
+HOST= 'localhost'
+PASSWORD = "" # Your local database password
+PORT = 5432 # Change this depending on which port your local database is using
+```
+
+# How to run the app
+Open two terminals. In each terminal, run the following commands:
+```Bash
+python3 app/dashboard app/api.py # macOS or Linux
+python app/dashboard app/api.py # Windows
+```
+
+```Bash
+shiny run --reload app/dashboard app/app.py
+```
+
+Access the app's GUI via browser: `http://127.0.0.1:8000/`
