@@ -125,7 +125,7 @@ def get_all_incompleted_products():
     conn = connect_to_database()
     cur = conn.cursor()
     # Use a simple SELECT and filter incomplete rows (rows with any NULL) in Python
-    cur.execute('SELECT * FROM product WHERE active = 0 AND link_to IS NULL ORDER BY scan_count DESC;')
+    cur.execute('SELECT * FROM product WHERE active = 0 ORDER BY scan_count DESC;')
     rows = cur.fetchall()
 
     # map rows to list[dict] using column names so jsonify can serialize it
@@ -326,6 +326,34 @@ def get_all_newly_added_products():
     conn.close()
     
     return jsonify(results)
+
+@app.route("/products/stats", methods=["GET"])
+def get_product_stats():
+    conn = connect_to_database()
+    cur = conn.cursor()
+    
+    stats = {}
+    
+    # Total products
+    cur.execute("SELECT COUNT(*) FROM product;")
+    stats['total_products'] = cur.fetchone()[0]
+    
+    # Total verified products
+    cur.execute("SELECT COUNT(*) FROM product WHERE active=1;")
+    stats['verified_products'] = cur.fetchone()[0]
+    
+    # Total incomplete products
+    cur.execute("SELECT COUNT(*) FROM product WHERE active=0;")
+    stats['incomplete_products'] = cur.fetchone()[0]
+    
+    # Newly added products
+    cur.execute("SELECT COUNT(*) FROM product WHERE newly_added=1;")
+    stats['newly_added_products'] = cur.fetchone()[0]
+    
+    cur.close()
+    conn.close()
+    
+    return jsonify(stats)
 
 if __name__ == "__main__":
     app.run(debug=True)

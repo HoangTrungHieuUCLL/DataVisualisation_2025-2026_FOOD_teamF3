@@ -4,7 +4,7 @@ import plotly.express as px
 import requests
 import re
 import json
-from services import get_incompleted_products, get_product_info, get_all_products, get_alike_products, link_product, get_incomplete_products_with_alike_products, update_product_info, get_products_count, get_latest_product, get_all_newly_added_products, re_clustering
+from services import get_incompleted_products, get_product_info, get_all_products, get_alike_products, link_product, get_incomplete_products_with_alike_products, update_product_info, get_products_count, get_latest_product, get_all_newly_added_products, re_clustering, get_product_stats
 # predict_cluster
 from tool_functions import _sanitize_id, render_field, render_table, render_alike_products_table
 from shared import app_dir
@@ -21,6 +21,7 @@ app_ui = ui.page_sidebar(
         ui.output_ui("dynamic_control_center"),
         ui.output_ui("recent_products_sidebar")
     ),
+    ui.output_ui("kpi_stats"),
     ui.layout_columns(
         ui.navset_tab(
             ui.nav_panel("Incomplete products with alike products",
@@ -58,6 +59,7 @@ def server(input, output, session):
     last_count = reactive.Value(None)
     # current_tab = reactive.Value("Incomplete products with alike products")
     newly_added_products = reactive.Value(pd.DataFrame())
+    product_stats = reactive.Value({})
     clicked_history = reactive.Value([])
 
     # --------------------------------- #
@@ -100,6 +102,10 @@ def server(input, output, session):
         all_newly_added_products = get_all_newly_added_products()
         df_newly_added = pd.json_normalize(all_newly_added_products)
         newly_added_products.set(df_newly_added)
+        
+        # Update stats
+        stats = get_product_stats()
+        product_stats.set(stats)
         
         
     @render.ui
@@ -148,6 +154,38 @@ def server(input, output, session):
         reactive_password.set("")
         login_ok.set(False)
 
+    @render.ui
+    def kpi_stats():
+        if not is_admin():
+            return ui.tags.div()
+            
+        stats = product_stats.get()
+        if not stats:
+            return ui.tags.div()
+
+        return ui.layout_columns(
+            ui.tags.div(
+                ui.tags.span("Total Products"),
+                ui.tags.h2(stats.get('total_products', 0), style="margin: 0;"),
+                class_="panel-box"
+            ),
+            ui.tags.div(
+                ui.tags.span("Verified"),
+                ui.tags.h2(stats.get('verified_products', 0), style="margin: 0;"),
+                class_="panel-box"
+            ),
+            ui.tags.div(
+                ui.tags.span("Incomplete"),
+                ui.tags.h2(stats.get('incomplete_products', 0), style="margin: 0;"),
+                class_="panel-box"
+            ),
+            ui.tags.div(
+                ui.tags.span("Newly Added"),
+                ui.tags.h2(stats.get('newly_added_products', 0), style="margin: 0;"),
+                class_="panel-box"
+            ),
+        )
+        
     # ------------------------------------------------------- #
     # Monitor if there is a new product added to the database #
     # --------------------------------------------------------#
@@ -175,7 +213,7 @@ def server(input, output, session):
         current_count, current_scan_sum = current
         prev_count, prev_scan_sum = previous
 
-        if current_count > prev_count or current_scan_sum != prev_scan_sum:
+        if current_count != prev_count or current_scan_sum != prev_scan_sum:
             last_count.set(current)
             update_the_tables()
 

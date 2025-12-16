@@ -158,3 +158,16 @@ def get_all_newly_added_products():
         return products.json()
     except Exception as e:
         return {"error": str(e)}
+
+def get_product_stats():
+    API_URL = "http://127.0.0.1:5000/products/stats"
+    try:
+        response = requests.get(API_URL)
+        return response.json()
+    except Exception:
+        return {
+            'total_products': 0,
+            'verified_products': 0,
+            'incomplete_products': 0,
+            'newly_added_products': 0
+        }
