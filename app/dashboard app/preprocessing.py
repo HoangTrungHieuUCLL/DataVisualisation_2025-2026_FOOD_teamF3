@@ -6,16 +6,15 @@ import string
 import nltk
 from nltk.stem import PorterStemmer
 from nltk.tokenize import word_tokenize
-from gensim.parsing.preprocessing import remove_stopwords
 
-# Ensure NLTK resources are available (needed for word_tokenize and PorterStemmer)
-try:
-    nltk.data.find('tokenizers/punkt')
-except nltk.downloader.DownloadError:
-    print("NLTK 'punkt' resource not found. Downloading...")
-    nltk.download('punkt')
-except:
-    pass # Handle other potential import errors silently
+# Ensure NLTK resources are available (needed for word_tokenize and PorterStemmer).
+# NLTK 3.9 split the tokenizer data into punkt_tab, so both are checked.
+for _resource, _package in (('tokenizers/punkt', 'punkt'), ('tokenizers/punkt_tab', 'punkt_tab')):
+    try:
+        nltk.data.find(_resource)
+    except LookupError:
+        print(f"NLTK '{_package}' resource not found. Downloading...")
+        nltk.download(_package)
 
 
 # --- 1. Helper Functions ---

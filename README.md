@@ -77,6 +77,49 @@ There are 3 components of this dashboard: compare by text columns (names, catego
 This pop up gives user a detailed sense of how much the products are alike to each other.
 
 ---
+# Running it with Docker (and deploying it)
+
+The app used to need a hand-built database in pgAdmin, which meant it only ran on
+the machine that built it. It now bootstraps itself from the CSV in this repo.
+
+### Locally
+
+```bash
+docker build -t food-dashboard .
+docker run -p 8000:8000 -e DATABASE_URL="postgresql://user:pass@host:5432/dbname" food-dashboard
+```
+
+The container seeds the database on first boot (skipping the work if the `product`
+table already has rows), starts the Flask API on an internal port, and serves the
+dashboard on `$PORT` (8000 by default).
+
+### Seeding a database by hand
+
+`app/dashboard app/seed_database.py` reproduces the full pipeline — encoding repair,
+text cleaning, TF-IDF vectorisation, DBSCAN clustering — and loads the result into
+whatever `DATABASE_URL` points at:
+
+```bash
+export DATABASE_URL="postgresql://user:pass@host:5432/dbname"
+python "app/dashboard app/seed_database.py"          # no-op if the table has rows
+python "app/dashboard app/seed_database.py" --reset  # rebuild from scratch
+```
+
+Note that `scan_count` and `newly_added` are **generated demo values** — those two
+columns came from the client's live system and were never part of the CSV export.
+Everything else is the real dataset.
+
+### Environment variables
+
+| Variable | Description |
+|---|---|
+| `DATABASE_URL` | PostgreSQL connection string. When unset, the app falls back to the local `database_credentials.py` below. |
+| `PORT` | Port the Shiny dashboard listens on (default 8000). |
+| `API_PORT` | Port the Flask API listens on (default 5000). |
+| `FOOD_API_URL` | Base URL of the Flask API (default `http://127.0.0.1:5000`). |
+| `FOOD_CSV_PATH` | Path to the source CSV used for seeding. |
+
+---
 # Configuration
 ### 1. Required packages and dependencies
 Run `pip install -r app/dashboard app/requirements.txt` to install all requirements and dependencies.

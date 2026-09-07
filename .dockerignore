@@ -1,0 +1,7 @@
+.git
+.DS_Store
+**/__pycache__
+**/*.pyc
+exploration/*.ipynb
+app/dashboard app/*.ipynb
+app/dashboard app/database_credentials.py

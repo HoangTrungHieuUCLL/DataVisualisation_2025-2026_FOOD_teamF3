@@ -6,9 +6,10 @@ import numpy as np
 from psycopg2 import connect
 import psycopg2
 import json
+import os
 import pandas as pd
 from sklearn.metrics import pairwise_distances
-from database_credentials import *
+from db_config import get_connection
 
 # Create Flask app
 app = Flask(__name__)
@@ -16,11 +17,7 @@ app = Flask(__name__)
 # Connection to database
 def connect_to_database():
     try:
-        conn = psycopg2.connect(database = DATABASE, 
-                                user = USER, 
-                                host= HOST,
-                                password = PASSWORD,
-                                port = PORT)
+        conn = get_connection()
         print("✅Connection ok")
         return conn
     except:
@@ -356,4 +353,10 @@ def get_product_stats():
     return jsonify(stats)
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    # Host/port are configurable so the API can sit behind the dashboard in a
+    # single container; debug stays off unless it is asked for explicitly.
+    app.run(
+        host=os.environ.get("API_HOST", "127.0.0.1"),
+        port=int(os.environ.get("API_PORT", 5000)),
+        debug=os.environ.get("FLASK_DEBUG") == "1",
+    )

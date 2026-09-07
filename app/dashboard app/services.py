@@ -1,4 +1,5 @@
 import joblib
+import os
 from pandas import DataFrame
 import requests
 from preprocessing import create_cleaned_text_feature
@@ -10,11 +11,15 @@ from sklearn.feature_extraction.text import CountVectorizer
 from matplotlib import pyplot as plt
 from sklearn.decomposition import TruncatedSVD
 
+# Base URL of the Flask API. Defaults to the local api.py; override with
+# FOOD_API_URL when the API runs somewhere else.
+API_BASE_URL = os.environ.get("FOOD_API_URL", "http://127.0.0.1:5000").rstrip("/")
+
 # Get all products
 
 
 def get_all_products():
-    API_URL = "http://127.0.0.1:5000/products"
+    API_URL = API_BASE_URL + "/products"
 
     try:
         products = requests.get(API_URL)
@@ -26,7 +31,7 @@ def get_all_products():
 
 
 def get_incompleted_products():
-    API_URL = "http://127.0.0.1:5000/products/incompleted"
+    API_URL = API_BASE_URL + "/products/incompleted"
 
     try:
         products = requests.get(API_URL)
@@ -38,7 +43,7 @@ def get_incompleted_products():
 
 
 def get_product_info(product_id):
-    API_URL = "http://127.0.0.1:5000/products/" + str(product_id)
+    API_URL = API_BASE_URL + "/products/" + str(product_id)
 
     try:
         product = requests.get(API_URL)
@@ -48,7 +53,7 @@ def get_product_info(product_id):
 
 
 def update_product_info(product_id, data):
-    API_URL = "http://127.0.0.1:5000/products/" + str(product_id)
+    API_URL = API_BASE_URL + "/products/" + str(product_id)
     try:
         response = requests.put(API_URL, json=data)
         return response.json()
@@ -57,7 +62,7 @@ def update_product_info(product_id, data):
 
 
 def get_alike_products(product_id, cluster_id):
-    API_URL = "http://127.0.0.1:5000/products/alike/" + \
+    API_URL = API_BASE_URL + "/products/alike/" + \
         str(product_id) + "/" + str(cluster_id)
 
     try:
@@ -68,7 +73,7 @@ def get_alike_products(product_id, cluster_id):
 
 
 def get_incomplete_products_with_alike_products():
-    API_URL = "http://127.0.0.1:5000/products/incomplete/alike"
+    API_URL = API_BASE_URL + "/products/incomplete/alike"
 
     try:
         products = requests.get(API_URL)
@@ -78,7 +83,7 @@ def get_incomplete_products_with_alike_products():
 
 
 def link_product(source_product_id, destination_product_id):
-    API_URL = "http://127.0.0.1:5000/products/link/" + \
+    API_URL = API_BASE_URL + "/products/link/" + \
         str(source_product_id) + "/" + str(destination_product_id)
 
     try:
@@ -89,7 +94,7 @@ def link_product(source_product_id, destination_product_id):
 
 
 def get_products_count():
-    API_URL = "http://127.0.0.1:5000/products/count"
+    API_URL = API_BASE_URL + "/products/count"
     try:
         response = requests.get(API_URL)
         data = response.json()
@@ -99,7 +104,7 @@ def get_products_count():
 
 
 def get_latest_product():
-    API_URL = "http://127.0.0.1:5000/products/latest"
+    API_URL = API_BASE_URL + "/products/latest"
     try:
         response = requests.get(API_URL)
         return response.json()
@@ -131,7 +136,7 @@ def re_clustering(df: DataFrame):
     df_cleaned.loc[df_cleaned['temp_cluster_id'] == -1, 'cluster_count'] = 1
 
     # Call API to update cluster_id
-    API_URL = "http://127.0.0.1:5000/products/update/cluster"
+    API_URL = API_BASE_URL + "/products/update/cluster"
     try:
         # Convert to list of dicts
         data = df_cleaned[['id', 'temp_cluster_id', 'cluster_count']].to_dict(orient='records')
@@ -139,7 +144,7 @@ def re_clustering(df: DataFrame):
     except Exception as e:
         print(f"Error updating clusters: {e}")
         
-    API_URL = "http://127.0.0.1:5000/products/update/newly_added_products"
+    API_URL = API_BASE_URL + "/products/update/newly_added_products"
     try:
         # Convert to list of dicts
         data_newly_added_products = newly_added_products[['id']].to_dict(orient='records')
@@ -151,7 +156,7 @@ def re_clustering(df: DataFrame):
     return df_cleaned[df_cleaned['id'].isin(newly_added_products['id'])]
         
 def get_all_newly_added_products():
-    API_URL = "http://127.0.0.1:5000/products/new"
+    API_URL = API_BASE_URL + "/products/new"
     
     try:
         products = requests.get(API_URL)
@@ -160,7 +165,7 @@ def get_all_newly_added_products():
         return {"error": str(e)}
 
 def get_product_stats():
-    API_URL = "http://127.0.0.1:5000/products/stats"
+    API_URL = API_BASE_URL + "/products/stats"
     try:
         response = requests.get(API_URL)
         return response.json()

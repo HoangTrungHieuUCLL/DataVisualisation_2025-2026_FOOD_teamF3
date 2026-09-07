@@ -1,6 +1,17 @@
+# Dashboard (Shiny) + API (Flask) + the clustering pipeline they share.
 faicons
+flask
+gunicorn
+joblib
+matplotlib
+more-itertools
+nltk
+numpy
+pandas
+plotly
+psycopg2-binary
+requests
+ridgeplot
+scikit-learn
 shiny
 shinywidgets
-plotly
-pandas
-ridgeplot
