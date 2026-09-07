@@ -23,9 +23,12 @@ COPY ["exploration/view_food_clean.csv", "./data/view_food_clean.csv"]
 COPY ["start.sh", "./start.sh"]
 RUN chmod +x ./start.sh
 
+# DEMO_MODE shows the sign-in details on the login card, since this image is
+# what gets published as a public demo. Run with -e DEMO_MODE=0 to hide them.
 ENV FOOD_CSV_PATH=/app/data/view_food_clean.csv \
     API_PORT=5000 \
-    PORT=8000
+    PORT=8000 \
+    DEMO_MODE=1
 
 EXPOSE 8000
 CMD ["./start.sh"]

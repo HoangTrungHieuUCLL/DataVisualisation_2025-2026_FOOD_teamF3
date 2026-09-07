@@ -118,6 +118,8 @@ Everything else is the real dataset.
 | `API_PORT` | Port the Flask API listens on (default 5000). |
 | `FOOD_API_URL` | Base URL of the Flask API (default `http://127.0.0.1:5000`). |
 | `FOOD_CSV_PATH` | Path to the source CSV used for seeding. |
+| `DEMO_MODE` | `1` prefills and displays the sign-in details on the login card, so visitors to the public demo can get in. On by default in the Docker image, off when running locally. |
+| `ADMIN_USERNAME` / `ADMIN_PASSCODE` | Override the built-in sign-in details. |
 
 ---
 # Configuration
