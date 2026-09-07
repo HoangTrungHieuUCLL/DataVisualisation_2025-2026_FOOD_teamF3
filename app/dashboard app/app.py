@@ -13,6 +13,13 @@ from shiny import App, reactive, render, ui
 import pandas as pd
 from components import _ClickedProducts
 import joblib
+import os
+
+# The public demo hands visitors the sign-in details rather than hiding the whole
+# app behind a form they cannot get past. Set DEMO_MODE=1 to prefill and show them.
+DEMO_MODE = os.environ.get("DEMO_MODE") == "1"
+ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "Danny")
+ADMIN_PASSCODE = os.environ.get("ADMIN_PASSCODE", "admin")
 
 # Add page title and sidebar
 app_ui = ui.page_sidebar(
@@ -113,9 +120,13 @@ def server(input, output, session):
         if is_admin() == False:
             return ui.tags.div(
                 ui.tags.h5("Admin Login", style="text-align: center"),
-                ui.input_text("username", "Username"),
-                ui.input_password("password", "Password"),
+                ui.input_text("username", "Username", value=ADMIN_USERNAME if DEMO_MODE else ""),
+                ui.input_password("password", "Password", value=ADMIN_PASSCODE if DEMO_MODE else ""),
                 ui.input_action_button("login", "Login", style="width: 100%; box-shadow: none;", class_="button"),
+                ui.tags.p(
+                    f"Demo access: {ADMIN_USERNAME} / {ADMIN_PASSCODE} — already filled in, just press Login.",
+                    style="text-align: center; font-size: 12px; opacity: 0.7; margin-top: 8px;",
+                ) if DEMO_MODE else None,
                 class_="panel-box"
             )
         else:
@@ -135,7 +146,7 @@ def server(input, output, session):
         password = input.password()
         reactive_user_name.set(username)
         reactive_password.set(password)
-        login_ok.set(username == "Danny" and password == "admin")
+        login_ok.set(username == ADMIN_USERNAME and password == ADMIN_PASSCODE)
 
         if login_ok.get() == False:
             ui.modal_show(
